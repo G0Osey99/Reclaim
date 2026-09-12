@@ -31,6 +31,11 @@ pub struct ScanArgs<'a> {
 
 /// Run `scan`.
 pub fn run(args: &ScanArgs) -> CmdResult {
+    // A `mounted:/path` source is a read-only POSIX walk (Trash/.Trashes and
+    // live files), not a block device (docs/plan/06 §6, §8).
+    if let Some(root) = args.source.strip_prefix("mounted:") {
+        return run_mounted(root, args);
+    }
     let (_resolved, src, info) = open_source(args.source)?;
 
     // Default (no pass flag) runs quick then deep; a flag selects just that pass.
@@ -149,6 +154,52 @@ pub fn run(args: &ScanArgs) -> CmdResult {
     if !quiet {
         eprintln!(
             "{total} total result row(s) in session (use `reclaim results {}`).",
+            dir.display()
+        );
+    }
+    Ok(Exit::Success)
+}
+
+/// Handle a `mounted:/path` source: a read-only POSIX walk into the session.
+fn run_mounted(root: &str, args: &ScanArgs) -> CmdResult {
+    let root_path = Path::new(root);
+    if !root_path.is_dir() {
+        return Err(CmdError::not_found(format!(
+            "mounted source '{root}' is not a directory"
+        )));
+    }
+    let abs = std::fs::canonicalize(root_path).unwrap_or_else(|_| root_path.to_path_buf());
+    let info = reclaim_session::SourceInfo {
+        source_id: format!("mounted:{}", abs.display()),
+        size: 0,
+        sector_size: 512,
+    };
+    let dir = resolve_session(None, args.session)?;
+    let mut session = if args.resume && dir.join("session.sqlite").exists() {
+        Session::open(&dir, &info, false).map_err(|e| CmdError::internal(e.to_string()))?
+    } else {
+        Session::create(&dir, info).map_err(|e| CmdError::internal(e.to_string()))?
+    };
+    if !args.quiet {
+        eprintln!(
+            "walking mounted {} → session {}",
+            abs.display(),
+            dir.display()
+        );
+    }
+    let json = args.json;
+    let quiet = args.quiet;
+    let report = session
+        .run_mounted(&abs, &mut |ev| emit_quick(ev, json, quiet))
+        .map_err(|e| CmdError::internal(e.to_string()))?;
+    if !quiet {
+        eprintln!(
+            "mounted walk: {} file(s), {} in Trash (deleted).",
+            report.entries, report.deleted
+        );
+        eprintln!(
+            "{} result row(s) (use `reclaim results {}`).",
+            report.entries,
             dir.display()
         );
     }

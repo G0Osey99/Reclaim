@@ -23,9 +23,20 @@ struct EngineDef {
     open: OpenFn,
 }
 
-/// The Phase-2 engine registry (order is priority on a probe tie).
-fn engines() -> [EngineDef; 3] {
+/// The engine registry (order is priority on a probe tie). Phase 3 adds the
+/// APFS and HFS+ engines alongside the Phase-2 exFAT/FAT/NTFS ones.
+fn engines() -> [EngineDef; 5] {
     [
+        EngineDef {
+            name: "apfs",
+            probe: fs_apfs::probe,
+            open: fs_apfs::open_boxed,
+        },
+        EngineDef {
+            name: "hfs+",
+            probe: fs_hfs::probe,
+            open: fs_hfs::open_boxed,
+        },
         EngineDef {
             name: "ntfs",
             probe: fs_ntfs::probe,
@@ -206,6 +217,111 @@ impl Session {
 }
 
 impl Session {
+    /// Walk a **mounted** volume/directory read-only via POSIX and store each
+    /// regular file as an entry (docs/plan/06 §6, §8). Files under a Trash
+    /// directory (`.Trash`, `.Trashes`, `Trash`) are stored `deleted` — the
+    /// "did you check the Trash?" recovery step — everything else `live`. No
+    /// block device is opened; `recover` copies these by path.
+    pub fn run_mounted(
+        &mut self,
+        root: &std::path::Path,
+        on_event: &mut dyn FnMut(&Event),
+    ) -> Result<MetaReport, SessionError> {
+        let source_id = self.source.source_id.clone();
+        let mut report = MetaReport {
+            scheme: "mounted".to_string(),
+            ..Default::default()
+        };
+        let mut rows: Vec<EntryRow> = Vec::new();
+        let mut stack: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+        let mut budget = 5_000_000usize;
+        while let Some(dir) = stack.pop() {
+            if budget == 0 {
+                break;
+            }
+            let entries = match std::fs::read_dir(&dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            for ent in entries.flatten() {
+                let path = ent.path();
+                let ft = match ent.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                if ft.is_symlink() {
+                    continue; // never follow symlinks (read-only, loop-safe)
+                }
+                if ft.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if !ft.is_file() {
+                    continue;
+                }
+                budget = budget.saturating_sub(1);
+                let rel = path.strip_prefix(root).unwrap_or(&path);
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let in_trash = rel.components().any(|c| {
+                    matches!(
+                        c.as_os_str().to_string_lossy().as_ref(),
+                        ".Trash" | ".Trashes" | "Trash"
+                    )
+                });
+                let meta = ent.metadata().ok();
+                let len = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                let name = ent.file_name().to_string_lossy().into_owned();
+                let ext = rel_str
+                    .rsplit('.')
+                    .next()
+                    .filter(|e| *e != rel_str && !e.is_empty())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                let family = family_for_ext(&ext);
+                let format = if ext.is_empty() {
+                    "file".to_string()
+                } else {
+                    format!("{family}.{ext}")
+                };
+                rows.push(EntryRow {
+                    path: rel_str.clone(),
+                    name,
+                    kind: "file",
+                    state: if in_trash { "deleted" } else { "live" }.to_string(),
+                    family,
+                    ext,
+                    format,
+                    offset: pseudo_offset(&rel_str),
+                    len,
+                    extents: Vec::new(),
+                    score: if in_trash { 90 } else { 99 },
+                    date: None,
+                    contiguous_assumed: false,
+                });
+                if in_trash {
+                    report.deleted += 1;
+                }
+            }
+        }
+        for chunk in rows.chunks(1024) {
+            let ids = self.store.insert_entries(&source_id, "mounted", chunk)?;
+            for (row, id) in chunk.iter().zip(ids.iter()) {
+                let ev = Event::Found {
+                    id: id.clone(),
+                    engine: "mounted".to_string(),
+                    path: row.path.clone(),
+                    size: row.len,
+                    score: row.score,
+                };
+                let _ = self.store.put_event("found", &ev.to_ndjson());
+                on_event(&ev);
+            }
+        }
+        report.volumes_handled = 1;
+        report.entries = rows.len() as u64;
+        Ok(report)
+    }
+
     /// Label carved results `allocated`/`unallocated` against the FS bitmaps and,
     /// when `unallocated_only`, hide (merge out) the allocated ones — a live
     /// file's content is not a deletion. Returns `(allocated, unallocated)`.

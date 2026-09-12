@@ -375,6 +375,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "fs-apfs"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
+ "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
 name = "fs-exfat"
 version = "0.0.0"
 dependencies = [
@@ -387,6 +398,17 @@ dependencies = [
 
 [[package]]
 name = "fs-fat"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
+ "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
+name = "fs-hfs"
 version = "0.0.0"
 dependencies = [
  "proptest",
@@ -788,6 +810,7 @@ dependencies = [
  "anyhow",
  "clap",
  "comfy-table",
+ "fs-apfs",
  "libc",
  "reclaim-block",
  "reclaim-carve",
@@ -850,8 +873,10 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "crossbeam-channel",
+ "fs-apfs",
  "fs-exfat",
  "fs-fat",
+ "fs-hfs",
  "fs-ntfs",
  "libc",
  "reclaim-block",
