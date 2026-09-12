@@ -1,0 +1,22 @@
+[package]
+name = "fs-hfs"
+description = "Reclaim HFS+/HFSX metadata engine: volume header + alternate VH, catalog/extents-overflow B-trees, node-slack + journal deleted-record recovery, decmpfs/resource forks (docs/plan/04 §3.2). Implemented from Apple TN1150."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-fs-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+reclaim-part.workspace = true
+tempfile.workspace = true
