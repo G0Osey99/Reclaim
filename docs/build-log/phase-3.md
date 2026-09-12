@@ -167,9 +167,19 @@
   tens of thousands of random + header-seeded inputs per parser, 0 panics.
 - **Bench:** table above; named_recall targets met on apfs-many-deletes (1.00)
   and hfsplus-delete (1.00); apfs-delete-history explained with numbers.
-- **`snapshots`** works against the real golden APFS container (checkpoint
-  history): `reclaim snapshots testdata/build/apfs-delete-history.img` reports 4
-  reachable checkpoint xids and 1 volume, read-only.
+- **`snapshots` works against a real local snapshot, read-only, non-sudo.** On
+  the M0 host, `reclaim snapshots disk3` (the live boot container) listed its 5
+  volumes, ~139 reachable checkpoint xids, and the real Time Machine local
+  snapshot `com.apple.TimeMachine.2026-09-12-182006.local` (xid 1545111);
+  `reclaim snapshots disk3 diff --from 1545111` then walked that snapshot vs the
+  current Data volume read-only and correctly reported no deletions in the
+  window. No `sudo` was needed — Full Disk Access is effective for this shell's
+  responsible process (docs/plan/06 §12), and the raw container read succeeded.
+  It also works against the golden container's checkpoint history
+  (`reclaim snapshots testdata/build/apfs-delete-history.img` → 4 xids, 1 volume).
+  Note the *real* boot container's descriptor ring is far deeper (~139
+  checkpoints) than the small 512 MiB golden images (~4) — ring depth scales with
+  `nx_xp_desc_blocks`.
 
 ## Checkpoint depth & the overwrite limit (numbers)
 - The **checkpoint descriptor ring is shallow**: `nx_xp_desc_blocks` on the
@@ -177,7 +187,9 @@
   checkpoint-map + one NXSB per transaction). apfs-delete-history's reachable
   xids are **{366, 365, 364, 363}** — depth **4**, *not* the 300+ the recipe's
   churn count suggests. **Churn does not deepen recoverable history; it destroys
-  it.** This corrects the apfs-delete-history recipe's premise.
+  it.** This corrects the apfs-delete-history recipe's premise and doc 04 §3.1
+  step 2. (Ring depth scales with `nx_xp_desc_blocks`: the live boot container
+  observed ~139 reachable xids, so large real containers have far more history.)
 - apfs-delete-history deletes file_000..011 and *then* runs **320** create/delete
   churn transactions. Those 320 transactions re-allocate and overwrite the freed
   metadata *and* data blocks, so 0/12 target files are recoverable by any method
@@ -196,10 +208,9 @@
    delete in `gen-images` to build a real `apfs_snap_metadata` snapshot; the
    engine's snapshot diff then recovers a full older view (≈100%). Not required —
    the checkpoint-history path is exercised without it.
-2. **`snapshots` against the live boot container:** needs the Phase-0
-   operator-group + non-sudo raw-read path (docs/plan/06 §12). `reclaim snapshots
-   disk3` (the boot container) will then list the machine's Time Machine local
-   snapshots for a real diff.
+2. **`snapshots` against the live boot container** already works on the M0 host
+   non-sudo (FDA effective; see Gates). On a host where the DAC gate blocks the
+   raw read, add the user to the `operator` group per docs/plan/06 §12 first.
 3. **Re-run the CI matrix** on the pushed `p3:` commits.
 
 ## Known gaps (deferred, with phase)
