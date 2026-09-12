@@ -1,0 +1,253 @@
+# cargo-fuzz targets for every reclaim-carve validator (docs/plan/09 §4).
+# Standalone crate (own [workspace]); excluded from the main workspace.
+[package]
+name = "reclaim-carve-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+reclaim-sigs = { path = "../../reclaim-sigs" }
+
+[dependencies.reclaim-carve]
+path = ".."
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "jpeg"
+path = "fuzz_targets/jpeg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "png"
+path = "fuzz_targets/png.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gif"
+path = "fuzz_targets/gif.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bmp"
+path = "fuzz_targets/bmp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tiff"
+path = "fuzz_targets/tiff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "isobmff"
+path = "fuzz_targets/isobmff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "riff"
+path = "fuzz_targets/riff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iff"
+path = "fuzz_targets/iff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zip"
+path = "fuzz_targets/zip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ole2"
+path = "fuzz_targets/ole2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdf"
+path = "fuzz_targets/pdf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sqlite"
+path = "fuzz_targets/sqlite.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text"
+path = "fuzz_targets/text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gzip"
+path = "fuzz_targets/gzip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bzip2"
+path = "fuzz_targets/bzip2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xz"
+path = "fuzz_targets/xz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zstd"
+path = "fuzz_targets/zstd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sevenz"
+path = "fuzz_targets/sevenz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rar"
+path = "fuzz_targets/rar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tar"
+path = "fuzz_targets/tar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "macho"
+path = "fuzz_targets/macho.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "elf"
+path = "fuzz_targets/elf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pe"
+path = "fuzz_targets/pe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dmg"
+path = "fuzz_targets/dmg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bplist"
+path = "fuzz_targets/bplist.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mp3"
+path = "fuzz_targets/mp3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "flac"
+path = "fuzz_targets/flac.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ogg"
+path = "fuzz_targets/ogg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mkv"
+path = "fuzz_targets/mkv.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mpegts"
+path = "fuzz_targets/mpegts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iso"
+path = "fuzz_targets/iso.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wasm"
+path = "fuzz_targets/wasm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ico"
+path = "fuzz_targets/ico.rs"
+test = false
+doc = false
+bench = false
