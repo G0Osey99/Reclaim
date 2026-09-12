@@ -1,0 +1,396 @@
+#!/usr/bin/env python3
+"""gen-fs-images — build Phase-2 golden FS images that the macOS/Docker tooling
+on this host cannot create natively (docs/build-log/phase-2.md).
+
+This host has no `mkfs.ntfs` and no Docker, so the NTFS images are written by a
+small, spec-faithful NTFS *builder* here (Microsoft NTFS on-disk layout): an MBR,
+a boot sector, a $MFT with $MFT/$Bitmap/root and user file records, non-resident
+$DATA runs, and a $Bitmap. Some user records have the in-use flag cleared and
+their clusters freed in $Bitmap — i.e. deleted files whose content is intact,
+exactly the recoverable case the fs-ntfs engine targets (docs/plan/04 §3.3).
+
+Ground truth (path, sha256, deleted) is written to <name>.groundtruth.json, the
+same shape as the Phase-0 sidecars, so scripts/bench.sh can score named_recall.
+
+Images/sidecars land in testdata/build/ and are NEVER committed (.gitignore).
+
+Usage:
+  scripts/gen-fs-images                 # build all synthetic recipes
+  scripts/gen-fs-images ntfs-delete
+  scripts/gen-fs-images --list
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import random
+import struct
+import sys
+import time
+import zlib
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BUILD_DIR = REPO / "testdata" / "build"
+
+SECTOR = 512
+CLUSTER = 4096
+MFT_RECORD = 1024
+
+
+# --- synthetic file content (same framing as scripts/gen-images) ---------
+
+def make_txt(rng, size):
+    words = "reclaim recovery sector cluster inode extent carve ntfs mft bitmap".split()
+    out = bytearray()
+    while len(out) < size:
+        out += (" ".join(rng.choice(words) for _ in range(8)) + "\n").encode()
+    return bytes(out[:size])
+
+
+def _png_chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def make_png(rng, size):
+    w = h = 16
+    raw = bytearray()
+    for _ in range(h):
+        raw.append(0)
+        raw += bytes(rng.randrange(256) for _ in range(w))
+    out = bytearray(b"\x89PNG\r\n\x1a\n")
+    out += _png_chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+    out += _png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+    pad = size - len(out) - 24
+    if pad > 0:
+        out += _png_chunk(b"rCLm", bytes(rng.randrange(256) for _ in range(pad)))
+    out += _png_chunk(b"IEND", b"")
+    return bytes(out)
+
+
+def make_jpeg(rng, size):
+    out = bytearray(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00")
+    remaining = size - len(out) - 2
+    while remaining > 4:
+        chunk = min(remaining - 4, 65533)
+        out += b"\xff\xfe" + struct.pack(">H", chunk + 2) + bytes(rng.randrange(256) for _ in range(chunk))
+        remaining = size - len(out) - 2
+    out += b"\xff\xd9"
+    return bytes(out)
+
+
+MAKERS = {"txt": (make_txt, "txt"), "png": (make_png, "png"), "jpeg": (make_jpeg, "jpg")}
+
+
+# --- NTFS structure builders ---------------------------------------------
+
+def enc_runs(runs):
+    """Encode (length_clusters, lcn) runs into an NTFS data-run list."""
+    out = bytearray()
+    prev = 0
+    for length, lcn in runs:
+        delta = lcn - prev
+        prev = lcn
+        loff = (length.bit_length() + 7) // 8 or 1
+        doff = (abs(delta).bit_length() + 8) // 8 or 1  # +1 bit for sign headroom
+        out.append((doff << 4) | loff)
+        out += length.to_bytes(loff, "little")
+        out += (delta & ((1 << (doff * 8)) - 1)).to_bytes(doff, "little")
+    out.append(0)
+    return bytes(out)
+
+
+def attr_resident(type_id, content, name="", attr_id=0):
+    name_utf16 = name.encode("utf-16-le")
+    name_off = 0x18
+    content_off = name_off + len(name_utf16)
+    content_off = (content_off + 7) & ~7
+    total = content_off + len(content)
+    total = (total + 7) & ~7
+    b = bytearray(total)
+    struct.pack_into("<I", b, 0, type_id)
+    struct.pack_into("<I", b, 4, total)
+    b[8] = 0  # resident
+    b[9] = len(name)
+    struct.pack_into("<H", b, 10, name_off if name else 0)
+    struct.pack_into("<H", b, 12, 0)  # flags
+    struct.pack_into("<H", b, 14, attr_id)
+    struct.pack_into("<I", b, 16, len(content))
+    struct.pack_into("<H", b, 20, content_off)
+    if name:
+        b[name_off:name_off + len(name_utf16)] = name_utf16
+    b[content_off:content_off + len(content)] = content
+    return bytes(b)
+
+
+def attr_nonresident(type_id, runs, real_size, name="", attr_id=0):
+    name_utf16 = name.encode("utf-16-le")
+    name_off = 0x40
+    run_off = name_off + len(name_utf16)
+    run_off = (run_off + 7) & ~7
+    runbytes = enc_runs(runs)
+    total = run_off + len(runbytes)
+    total = (total + 7) & ~7
+    last_vcn = (real_size + CLUSTER - 1) // CLUSTER - 1
+    alloc = ((real_size + CLUSTER - 1) // CLUSTER) * CLUSTER
+    b = bytearray(total)
+    struct.pack_into("<I", b, 0, type_id)
+    struct.pack_into("<I", b, 4, total)
+    b[8] = 1  # non-resident
+    b[9] = len(name)
+    struct.pack_into("<H", b, 10, name_off if name else 0)
+    struct.pack_into("<H", b, 12, 0)
+    struct.pack_into("<H", b, 14, attr_id)
+    struct.pack_into("<Q", b, 16, 0)             # start VCN
+    struct.pack_into("<Q", b, 24, max(last_vcn, 0))  # last VCN
+    struct.pack_into("<H", b, 32, run_off)
+    struct.pack_into("<Q", b, 40, alloc)         # allocated size
+    struct.pack_into("<Q", b, 48, real_size)     # real size
+    struct.pack_into("<Q", b, 56, real_size)     # init size
+    if name:
+        b[name_off:name_off + len(name_utf16)] = name_utf16
+    b[run_off:run_off + len(runbytes)] = runbytes
+    return bytes(b)
+
+
+def filetime(unix=None):
+    if unix is None:
+        unix = int(time.time())
+    return (unix + 11644473600) * 10_000_000
+
+
+def attr_standard_information():
+    ft = filetime()
+    c = struct.pack("<QQQQ", ft, ft, ft, ft) + struct.pack("<I", 0x80) + b"\x00" * 24
+    return attr_resident(0x10, c, attr_id=0)
+
+
+def attr_file_name(name, parent_ref, is_dir, real_size):
+    ft = filetime()
+    name_utf16 = name.encode("utf-16-le")
+    c = bytearray()
+    c += struct.pack("<Q", parent_ref | (1 << 48))   # parent ref + seq
+    c += struct.pack("<QQQQ", ft, ft, ft, ft)        # 4 timestamps
+    c += struct.pack("<Q", ((real_size + CLUSTER - 1)//CLUSTER)*CLUSTER)  # alloc
+    c += struct.pack("<Q", real_size)                # real
+    c += struct.pack("<I", 0x10 if is_dir else 0x80) # flags
+    c += struct.pack("<I", 0)                        # reparse
+    c += struct.pack("<B", len(name))                # name length (chars)
+    c += struct.pack("<B", 1)                        # name type Win32
+    c += name_utf16
+    return attr_resident(0x30, bytes(c))
+
+
+def build_record(rec_no, flags, attrs, seq=1):
+    """Assemble a 1024-byte FILE record with fix-ups applied."""
+    b = bytearray(MFT_RECORD)
+    b[0:4] = b"FILE"
+    usa_off = 0x30
+    usa_count = 3  # USN + 2 sectors
+    struct.pack_into("<H", b, 4, usa_off)
+    struct.pack_into("<H", b, 6, usa_count)
+    struct.pack_into("<H", b, 16, seq)          # sequence number
+    struct.pack_into("<H", b, 18, 1)            # hard link count
+    first_attr = 0x38
+    struct.pack_into("<H", b, 20, first_attr)
+    struct.pack_into("<H", b, 22, flags)        # 0x01 in-use, 0x02 dir
+    struct.pack_into("<I", b, 28, MFT_RECORD)   # allocated size
+    struct.pack_into("<H", b, 40, len(attrs) + 1)  # next attr id
+
+    pos = first_attr
+    for a in attrs:
+        b[pos:pos + len(a)] = a
+        pos += len(a)
+    struct.pack_into("<I", b, pos, 0xFFFFFFFF)  # end marker
+    pos += 8
+    struct.pack_into("<I", b, 24, pos)          # used size
+
+    # Fix-up: set USN, stash real sector-end bytes into the USA, write USN marker.
+    usn = 0x0001
+    struct.pack_into("<H", b, usa_off, usn)
+    for k in range(usa_count - 1):
+        end = k * SECTOR + SECTOR - 2
+        b[usa_off + 2 + k * 2:usa_off + 4 + k * 2] = bytes(b[end:end + 2])
+        struct.pack_into("<H", b, end, usn)
+    return bytes(b)
+
+
+def build_ntfs(volume_clusters, files, deleted_set):
+    """Return (volume_bytes, metas). Layout: boot, $MFT (16 recs), $Bitmap,
+    then file data clusters."""
+    vol = bytearray(volume_clusters * CLUSTER)
+
+    mft_cluster = 4
+    mft_records = 64
+    mft_clusters = (mft_records * MFT_RECORD + CLUSTER - 1) // CLUSTER
+    bitmap_cluster = mft_cluster + mft_clusters
+    bitmap_clusters = 1
+    data_start = bitmap_cluster + bitmap_clusters
+
+    # Boot sector.
+    boot = bytearray(SECTOR)
+    boot[0:3] = b"\xeb\x52\x90"
+    boot[3:11] = b"NTFS    "
+    struct.pack_into("<H", boot, 11, SECTOR)
+    boot[13] = CLUSTER // SECTOR           # sectors per cluster
+    struct.pack_into("<Q", boot, 0x28, volume_clusters * (CLUSTER // SECTOR))  # total sectors
+    struct.pack_into("<Q", boot, 0x30, mft_cluster)   # $MFT cluster
+    struct.pack_into("<Q", boot, 0x38, mft_cluster)   # $MFTMirr (reuse)
+    boot[0x40] = (256 - 10) & 0xFF        # clusters-per-record = -10 → 1024 bytes
+    struct.pack_into("<Q", boot, 0x48, 0x0123456789ABCDEF)  # serial
+    boot[510] = 0x55
+    boot[511] = 0xAA
+    vol[0:SECTOR] = boot
+
+    metas = []
+    records = {}
+
+    # Assign data clusters to files and build user records (16+).
+    next_cluster = data_start
+    rec_no = 16
+    for i, (name, fam) in enumerate(files):
+        maker, ext = MAKERS[fam]
+        rng = random.Random(f"ntfs-{name}")
+        size = rng.randint(8, 200) * 1024
+        data = maker(rng, size)
+        nclus = (len(data) + CLUSTER - 1) // CLUSTER
+        lcn = next_cluster
+        next_cluster += nclus
+        vol[lcn * CLUSTER: lcn * CLUSTER + len(data)] = data
+
+        deleted = i in deleted_set
+        flags = 0x00 if deleted else 0x01  # clear in-use bit on delete
+        attrs = [
+            attr_standard_information(),
+            attr_file_name(name, 5, False, len(data)),
+            attr_nonresident(0x80, [(nclus, lcn)], len(data)),
+        ]
+        records[rec_no] = build_record(rec_no, flags, attrs)
+        metas.append({
+            "path": name,
+            "family": fam,
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "first_cluster": lcn,
+            "deleted": deleted,
+        })
+        rec_no += 1
+
+    used_clusters = next_cluster
+
+    # $MFT record 0 (self): non-resident $DATA over the MFT clusters.
+    mft_size = mft_records * MFT_RECORD
+    records[0] = build_record(0, 0x01, [
+        attr_standard_information(),
+        attr_file_name("$MFT", 5, False, mft_size),
+        attr_nonresident(0x80, [(mft_clusters, mft_cluster)], mft_size),
+    ])
+    # Root directory record 5.
+    records[5] = build_record(5, 0x03, [  # in-use + directory
+        attr_standard_information(),
+        attr_file_name(".", 5, True, 0),
+    ])
+    # $Bitmap record 6: non-resident $DATA over the bitmap cluster.
+    bm_size = bitmap_clusters * CLUSTER
+    records[6] = build_record(6, 0x01, [
+        attr_standard_information(),
+        attr_file_name("$Bitmap", 5, False, bm_size),
+        attr_nonresident(0x80, [(bitmap_clusters, bitmap_cluster)], bm_size),
+    ])
+
+    # Write MFT records.
+    for rn, rec in records.items():
+        off = mft_cluster * CLUSTER + rn * MFT_RECORD
+        vol[off:off + len(rec)] = rec
+
+    # $Bitmap: mark all clusters up to used_clusters allocated, except the data
+    # clusters of deleted files (freed on delete).
+    bm = bytearray(bitmap_clusters * CLUSTER)
+    for c in range(used_clusters):
+        bm[c // 8] |= 1 << (c % 8)
+    for m in metas:
+        if m["deleted"]:
+            nclus = (m["size"] + CLUSTER - 1) // CLUSTER
+            for c in range(m["first_cluster"], m["first_cluster"] + nclus):
+                bm[c // 8] &= ~(1 << (c % 8)) & 0xFF
+    vol[bitmap_cluster * CLUSTER: bitmap_cluster * CLUSTER + len(bm)] = bm
+
+    return bytes(vol), metas
+
+
+def build_image(name, files, deleted_set, volume_mb=16, part_lba=2048):
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    volume_clusters = (volume_mb * 1024 * 1024) // CLUSTER
+    vol, metas = build_ntfs(volume_clusters, files, deleted_set)
+
+    part_off = part_lba * SECTOR
+    total = part_off + len(vol) + SECTOR
+    img = bytearray(total)
+    # MBR with one NTFS (0x07) partition.
+    mbr = bytearray(SECTOR)
+    e = 446
+    mbr[e] = 0x00
+    mbr[e + 4] = 0x07
+    struct.pack_into("<I", mbr, e + 8, part_lba)
+    struct.pack_into("<I", mbr, e + 12, len(vol) // SECTOR)
+    mbr[510] = 0x55
+    mbr[511] = 0xAA
+    img[0:SECTOR] = mbr
+    img[part_off:part_off + len(vol)] = vol
+
+    out = BUILD_DIR / f"{name}.img"
+    with open(out, "wb") as f:
+        f.write(img)
+    # Ground-truth sidecar (path + sha256 + deleted), absolute extents resolved
+    # by the bench via the partition offset.
+    sidecar = {
+        "recipe": name,
+        "image": str(out.relative_to(REPO)),
+        "scheme": "MBR",
+        "fs": "NTFS",
+        "synthetic": True,
+        "partition_offset": part_off,
+        "cluster_size": CLUSTER,
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "files": [{k: v for k, v in m.items() if k != "first_cluster"} for m in metas],
+    }
+    with open(BUILD_DIR / f"{name}.groundtruth.json", "w") as f:
+        json.dump(sidecar, f, indent=2)
+    print(f"[{name}] wrote {out} ({total} bytes), {len(metas)} files, "
+          f"{sum(1 for m in metas if m['deleted'])} deleted")
+    return out
+
+
+RECIPES = {
+    # ntfs-delete: a flat set of files, several deleted (content intact).
+    "ntfs-delete": dict(
+        files=[(f"file_{i:03d}.{ext}", fam)
+               for i, (fam, ext) in enumerate(
+                   [("jpeg", "jpg"), ("png", "png"), ("txt", "txt")] * 8)],
+        deleted_set={1, 3, 6, 9, 12, 15, 18, 21},
+    ),
+}
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith("--")]
+    if "--list" in argv:
+        for k in RECIPES:
+            print(k)
+        return 0
+    wanted = args or list(RECIPES)
+    ok = 0
+    for name in wanted:
+        r = RECIPES.get(name)
+        if not r:
+            print(f"unknown recipe {name}", file=sys.stderr)
+            continue
+        build_image(name, r["files"], r["deleted_set"])
+        ok += 1
+    print(f"built {ok} image(s) into {BUILD_DIR}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
