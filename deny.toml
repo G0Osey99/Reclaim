@@ -1,0 +1,46 @@
+# cargo-deny policy (schema v2, cargo-deny 0.20). Licensing rules per build
+# guide Part 3.3 / docs/plan/11-safety-legal-licensing.md: a permissive
+# allow-list only. GPL/LGPL code is never vendored (LGPL permitted solely as a
+# dynamically linked system library, of which round 1 has none).
+
+[graph]
+targets = [
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+all-features = true
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# The Part 3.3 allow-list. MPL-2.0 is file-level (dynamically separable) copyleft
+# and is accepted on that basis; no GPL/LGPL family license appears here.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+]
+
+[bans]
+# Duplicate transitive versions are noise, not a licensing/safety problem —
+# warn so they surface without blocking the phase.
+multiple-versions = "warn"
+wildcards = "warn"
+allow-wildcard-paths = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Add specific RustSec IDs here with a justification only when triaged.
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

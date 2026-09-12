@@ -1,0 +1,21 @@
+[package]
+name = "reclaim-report"
+description = "Reclaim report generation: JSON / HTML / CSV summaries of a session's results (docs/plan/02 FR-RES-5)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-session.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

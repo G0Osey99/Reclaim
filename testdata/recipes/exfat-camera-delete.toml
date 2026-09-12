@@ -1,0 +1,19 @@
+# exFAT SD-card-style image: camera DCIM layout, some photos deleted.
+# Mirrors docs/plan/09 §2 "exfat-camera-delete".
+name = "exfat-camera-delete"
+size_mb = 256
+scheme = "MBR"
+fs = "ExFAT"
+volname = "NO NAME"
+layout = "camera"          # DCIM/100RECLM/IMG_%04d.<ext>
+
+[populate]
+files = 48
+families = ["jpeg", "png", "mp4", "txt"]
+min_kb = 8
+max_kb = 768
+
+[actions]
+# Delete a contiguous run of early images (the classic "oops, formatted/deleted").
+delete_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+apfs_churn = 0

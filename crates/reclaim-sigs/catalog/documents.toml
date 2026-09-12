@@ -1,0 +1,216 @@
+# Documents & office (docs/plan/05 §3.5). ZIP-containers (ooxml/odf/iwork/epub)
+# share the ZIP local-header magic and are refined by the `zip` validator via
+# member names.
+
+[[signature]]
+id = "doc.pdf"
+family = "doc"
+extensions = ["pdf"]
+mime = "application/pdf"
+tier = 1
+headers = [ { pattern = "25 50 44 46 2D" } ]
+footer = { pattern = "25 25 45 4F 46", search_max = "512MiB" }
+size = { min = "64B", max = "512MiB" }
+strategy = "structural"
+validator = "pdf"
+metadata = ["pdfinfo"]
+
+[[signature]]
+id = "doc.ooxml"
+family = "doc"
+extensions = ["docx", "xlsx", "pptx"]
+mime = "application/vnd.openxmlformats-officedocument"
+tier = 1
+headers = [ { pattern = "50 4B 03 04" } ]
+strategy = "structural"
+validator = "zip"
+metadata = ["ooxml"]
+
+[[signature]]
+id = "doc.odf"
+family = "doc"
+extensions = ["odt", "ods", "odp"]
+mime = "application/vnd.oasis.opendocument"
+tier = 2
+headers = [ { pattern = "50 4B 03 04" } ]
+strategy = "structural"
+validator = "zip"
+metadata = []
+
+[[signature]]
+id = "doc.iwork"
+family = "doc"
+extensions = ["pages", "numbers", "key"]
+mime = "application/x-iwork"
+tier = 1
+headers = [ { pattern = "50 4B 03 04" } ]
+strategy = "structural"
+validator = "zip"
+metadata = []
+
+[[signature]]
+id = "doc.epub"
+family = "doc"
+extensions = ["epub"]
+mime = "application/epub+zip"
+tier = 2
+headers = [ { pattern = "50 4B 03 04" } ]
+strategy = "structural"
+validator = "zip"
+metadata = []
+
+[[signature]]
+id = "doc.ole2"
+family = "doc"
+extensions = ["doc", "xls", "ppt", "msg"]
+mime = "application/x-ole-storage"
+tier = 1
+headers = [ { pattern = "D0 CF 11 E0 A1 B1 1A E1" } ]
+size = { min = "512B", max = "2GiB" }
+strategy = "structural"
+validator = "ole2"
+metadata = []
+
+[[signature]]
+id = "doc.rtf"
+family = "doc"
+extensions = ["rtf"]
+mime = "application/rtf"
+tier = 1
+headers = [ { pattern = "7B 5C 72 74 66" } ]
+footer = { pattern = "7D", search_max = "64MiB" }
+strategy = "structural"
+validator = "rtf"
+metadata = []
+
+[[signature]]
+id = "doc.mobi"
+family = "doc"
+extensions = ["mobi", "azw"]
+mime = "application/x-mobipocket-ebook"
+tier = 3
+headers = [ { pattern = "42 4F 4F 4B 4D 4F 42 49", offset = 60 } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "doc.djvu"
+family = "doc"
+extensions = ["djvu", "djv"]
+mime = "image/vnd.djvu"
+tier = 3
+headers = [ { pattern = "41 54 26 54 46 4F 52 4D ?? ?? ?? ?? 44 4A 56" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "doc.chm"
+family = "doc"
+extensions = ["chm"]
+mime = "application/vnd.ms-htmlhelp"
+tier = 3
+headers = [ { pattern = "49 54 53 46 03 00 00 00" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "doc.txt"
+family = "doc"
+extensions = ["txt", "md", "csv", "log"]
+mime = "text/plain"
+tier = 1
+# Headerless: the `text` validator uses a UTF-8/16 BOM hint, printable ratio and
+# index of coincidence. BOMs are listed so BOM-prefixed text anchors precisely.
+headers = [
+  { pattern = "EF BB BF" },  # UTF-8 BOM
+  { pattern = "FF FE" },     # UTF-16 LE BOM
+  { pattern = "FE FF" },     # UTF-16 BE BOM
+]
+size = { min = "16B", max = "256MiB" }
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "doc.html"
+family = "doc"
+extensions = ["html", "htm"]
+mime = "text/html"
+tier = 2
+headers = [
+  { pattern = "3C 21 44 4F 43 54 59 50 45" },
+  { pattern = "3C 21 64 6F 63 74 79 70 65" },
+  { pattern = "3C 68 74 6D 6C" },
+  { pattern = "3C 48 54 4D 4C" },
+]
+footer = { pattern = "3C 2F 68 74 6D 6C 3E", search_max = "16MiB" }
+strategy = "footer"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "doc.xml"
+family = "doc"
+extensions = ["xml", "plist"]
+mime = "text/xml"
+tier = 2
+headers = [ { pattern = "3C 3F 78 6D 6C" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "doc.json"
+family = "doc"
+extensions = ["json"]
+mime = "application/json"
+tier = 3
+headers = [ { pattern = "7B 22" }, { pattern = "5B 7B" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "doc.bplist"
+family = "doc"
+extensions = ["plist"]
+mime = "application/x-plist"
+tier = 1
+headers = [ { pattern = "62 70 6C 69 73 74 30 30" } ]
+size = { min = "40B", max = "64MiB" }
+strategy = "structural"
+validator = "bplist"
+metadata = []
+
+[[signature]]
+id = "doc.ics_vcf"
+family = "doc"
+extensions = ["ics", "vcf"]
+mime = "text/calendar"
+tier = 2
+headers = [ { pattern = "42 45 47 49 4E 3A 56 43 41 4C 45 4E 44 41 52" }, { pattern = "42 45 47 49 4E 3A 56 43 41 52 44" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "doc.onenote"
+family = "doc"
+extensions = ["one"]
+mime = "application/onenote"
+tier = 3
+headers = [ { pattern = "E4 52 5C 7B 8C D8 A7 4D AE B1 53 78 D0 29 96 D3" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "sys.plist_xml"
+family = "sys"
+extensions = ["plist"]
+mime = "application/x-plist"
+tier = 1
+headers = [ { pattern = "3C 3F 78 6D 6C" } ]
+footer = { pattern = "3C 2F 70 6C 69 73 74 3E", search_max = "16MiB" }
+strategy = "footer"
+validator = "text"
+metadata = []

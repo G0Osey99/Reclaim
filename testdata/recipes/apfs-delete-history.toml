@@ -1,0 +1,18 @@
+# APFS image with a deep checkpoint history: 300+ create/delete transactions
+# accumulate checkpoints so Phase 3 can mine them (docs/plan/06 §3, trap 2).
+name = "apfs-delete-history"
+size_mb = 512
+scheme = "GPT"
+fs = "APFS"
+volname = "APFSDATA"
+layout = "flat"
+
+[populate]
+files = 40
+families = ["jpeg", "png", "mp4", "txt"]
+min_kb = 8
+max_kb = 512
+
+[actions]
+delete_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+apfs_churn = 320        # create+delete a small file this many times before detach

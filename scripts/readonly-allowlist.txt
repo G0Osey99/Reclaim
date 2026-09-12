@@ -1,0 +1,22 @@
+# Read-only allow-list (docs/plan/09 §5, build guide Part 3.2).
+# One path prefix per line. A file listed here MAY contain write/mutate patterns;
+# every other tracked .rs file must not. Reviewed on every change.
+#
+# Phase 0 has no byte-writing production code. The single entry below is for the
+# read-only device-geometry ioctls (DKIOCGETBLOCKSIZE / DKIOCGETBLOCKCOUNT /
+# DKIOCGETPHYSICALBLOCKSIZE) — these query size only, they never mutate a device.
+crates/reclaim-block/src/raw_device.rs
+# Phase 1 — image output (the only source-adjacent writer): raw/sparse/zstd.
+crates/reclaim-block/src/imaging/dest.rs
+# Phase 1 — the imaging sidecar map is written next to the image (destination).
+crates/reclaim-block/src/imaging/map.rs
+# Build-time codegen only writes to OUT_DIR (the signature table); never a device.
+crates/reclaim-sigs/build.rs
+# Phase 1 — SQLite session store, recovered files, and report/manifest output.
+crates/reclaim-session/
+crates/reclaim-report/
+# Phase 1 — CLI recover/report/preview/image write to user-chosen destinations.
+crates/reclaim-cli/src/commands/recover.rs
+crates/reclaim-cli/src/commands/report.rs
+crates/reclaim-cli/src/commands/preview.rs
+crates/reclaim-cli/src/commands/image.rs

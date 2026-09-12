@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "dev/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  ci:
+    name: cargo ci (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the exact stable version + clippy/rustfmt;
+      # `rustup show` installs it (components come from the toolchain file).
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+
+      # Make `cargo ci` resolve to scripts/cargo-ci (external subcommand).
+      - name: Add scripts to PATH
+        run: echo "${GITHUB_WORKSPACE}/scripts" >> "${GITHUB_PATH}"
+
+      - name: cargo ci
+        run: cargo ci

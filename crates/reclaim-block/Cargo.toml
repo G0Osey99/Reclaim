@@ -1,0 +1,27 @@
+[package]
+name = "reclaim-block"
+description = "Read-only block-device abstraction for Reclaim: BlockSource trait, image/raw-device sources, offset views, read-ahead cache, bad-block map."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Imaging (Phase 1): per-chunk + whole-image hashing and optional compression.
+blake3.workspace = true
+sha2.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

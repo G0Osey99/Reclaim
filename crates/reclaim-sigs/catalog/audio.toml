@@ -1,0 +1,149 @@
+# Audio (docs/plan/05 §3.4).
+
+[[signature]]
+id = "audio.wav"
+family = "audio"
+extensions = ["wav"]
+mime = "audio/wav"
+tier = 1
+headers = [ { pattern = "52 49 46 46 ?? ?? ?? ?? 57 41 56 45" }, { pattern = "52 46 36 34" } ]
+size = { min = "44B", max = "4GiB" }
+strategy = "structural"
+validator = "riff"
+metadata = []
+
+[[signature]]
+id = "audio.aiff"
+family = "audio"
+extensions = ["aif", "aiff", "aifc"]
+mime = "audio/aiff"
+tier = 1
+headers = [
+  { pattern = "46 4F 52 4D ?? ?? ?? ?? 41 49 46 46" },
+  { pattern = "46 4F 52 4D ?? ?? ?? ?? 41 49 46 43" },
+]
+size = { min = "12B", max = "4GiB" }
+strategy = "structural"
+validator = "iff"
+metadata = []
+
+[[signature]]
+id = "audio.mp3"
+family = "audio"
+extensions = ["mp3"]
+mime = "audio/mpeg"
+tier = 1
+headers = [
+  { pattern = "49 44 33" },        # ID3v2
+  { pattern = "FF FB" }, { pattern = "FF FA" }, { pattern = "FF F3" },
+  { pattern = "FF F2" }, { pattern = "FF E3" },
+]
+size = { min = "128B", max = "1GiB" }
+strategy = "structural"
+validator = "mp3"
+metadata = ["id3"]
+
+[[signature]]
+id = "audio.flac"
+family = "audio"
+extensions = ["flac"]
+mime = "audio/flac"
+tier = 1
+headers = [ { pattern = "66 4C 61 43" } ]
+size = { min = "42B", max = "2GiB" }
+strategy = "structural"
+validator = "flac"
+metadata = []
+
+[[signature]]
+id = "audio.ogg"
+family = "audio"
+extensions = ["ogg", "oga", "opus"]
+mime = "audio/ogg"
+tier = 1
+headers = [ { pattern = "4F 67 67 53" } ]
+size = { min = "58B", max = "2GiB" }
+strategy = "structural"
+validator = "ogg"
+metadata = []
+
+[[signature]]
+id = "audio.m4a"
+family = "audio"
+extensions = ["m4a"]
+mime = "audio/mp4"
+tier = 1
+headers = [ { pattern = "?? ?? ?? ?? 66 74 79 70 4D 34 41 20" } ]
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]
+
+[[signature]]
+id = "audio.aac_adts"
+family = "audio"
+extensions = ["aac"]
+mime = "audio/aac"
+tier = 2
+headers = [ { pattern = "FF F1" }, { pattern = "FF F9" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "audio.caf"
+family = "audio"
+extensions = ["caf"]
+mime = "audio/x-caf"
+tier = 2
+headers = [ { pattern = "63 61 66 66 00 01 00 00" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "audio.ape"
+family = "audio"
+extensions = ["ape"]
+mime = "audio/x-ape"
+tier = 3
+headers = [ { pattern = "4D 41 43 20" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "audio.wv"
+family = "audio"
+extensions = ["wv"]
+mime = "audio/x-wavpack"
+tier = 3
+headers = [ { pattern = "77 76 70 6B" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "audio.mid"
+family = "audio"
+extensions = ["mid", "midi"]
+mime = "audio/midi"
+tier = 2
+headers = [ { pattern = "4D 54 68 64" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "audio.amr"
+family = "audio"
+extensions = ["amr"]
+mime = "audio/amr"
+tier = 3
+headers = [ { pattern = "23 21 41 4D 52" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "audio.dsf"
+family = "audio"
+extensions = ["dsf", "dff"]
+mime = "audio/x-dsd"
+tier = 3
+headers = [ { pattern = "44 53 44 20" }, { pattern = "46 52 4D 38" } ]
+strategy = "structural"
+metadata = []

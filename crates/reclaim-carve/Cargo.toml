@@ -1,0 +1,26 @@
+[package]
+name = "reclaim-carve"
+description = "Reclaim carving engine: Aho-Corasick signature matcher, per-format validators and extractors over a read-only BlockSource (docs/plan/03 §2.3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-sigs.workspace = true
+aho-corasick.workspace = true
+memchr.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true

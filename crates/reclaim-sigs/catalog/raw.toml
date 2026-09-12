@@ -1,0 +1,246 @@
+# Camera RAW (docs/plan/05 §3.2 — all Tier 1; photographers are the primary
+# persona). Most are TIFF containers refined by the `tiff` validator's Make/tag
+# table; Canon CR3 / Nikon N-RAW / Blackmagic are ISOBMFF. Formats distinguished
+# only by the EXIF `Make` tag carry the plain TIFF magic and are refined at
+# validation time.
+
+# ---- Distinct-magic RAWs -------------------------------------------------
+[[signature]]
+id = "raw.cr2"
+family = "raw"
+extensions = ["cr2"]
+mime = "image/x-canon-cr2"
+tier = 1
+headers = [ { pattern = "49 49 2A 00 10 00 00 00 43 52" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.cr3"
+family = "raw"
+extensions = ["cr3"]
+mime = "image/x-canon-cr3"
+tier = 1
+headers = [ { pattern = "?? ?? ?? ?? 66 74 79 70 63 72 78 20" } ]  # ftyp brand `crx `
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]
+
+[[signature]]
+id = "raw.crw"
+family = "raw"
+extensions = ["crw"]
+mime = "image/x-canon-crw"
+tier = 1
+headers = [ { pattern = "49 49 1A 00 00 00 48 45 41 50 43 43 44 52" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "raw.orf"
+family = "raw"
+extensions = ["orf"]
+mime = "image/x-olympus-orf"
+tier = 1
+headers = [ { pattern = "49 49 52 4F 08 00 00 00" }, { pattern = "49 49 52 53" }, { pattern = "4D 4D 4F 52" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.rw2"
+family = "raw"
+extensions = ["rw2", "rwl"]
+mime = "image/x-panasonic-rw2"
+tier = 1
+# Panasonic uses TIFF magic 0x55 (II U \0). doc 05 listed a 20-byte camera-
+# specific tail (IFD offset + content) that varies per file — trimmed to the
+# 4-byte discriminator (noted in phase-1.md).
+headers = [ { pattern = "49 49 55 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.raf"
+family = "raw"
+extensions = ["raf"]
+mime = "image/x-fuji-raf"
+tier = 1
+headers = [ { pattern = "46 55 4A 49 46 49 4C 4D 43 43 44 2D 52 41 57" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "raw.x3f"
+family = "raw"
+extensions = ["x3f"]
+mime = "image/x-sigma-x3f"
+tier = 1
+headers = [ { pattern = "46 4F 56 62" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "raw.mrw"
+family = "raw"
+extensions = ["mrw"]
+mime = "image/x-minolta-mrw"
+tier = 1
+headers = [ { pattern = "00 4D 52 4D" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "raw.iiq"
+family = "raw"
+extensions = ["iiq"]
+mime = "image/x-phaseone-iiq"
+tier = 1
+headers = [ { pattern = "49 49 49 49" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.ari"
+family = "raw"
+extensions = ["ari"]
+mime = "image/x-arriraw"
+tier = 1
+headers = [ { pattern = "41 52 52 49 12 34 56 78" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "raw.r3d"
+family = "raw"
+extensions = ["r3d"]
+mime = "image/x-red-r3d"
+tier = 1
+headers = [ { pattern = "?? ?? ?? ?? 52 45 44 31" }, { pattern = "?? ?? ?? ?? 52 45 44 32" } ]
+strategy = "structural"
+metadata = []
+
+# ---- Make-refined TIFF RAWs (share the plain TIFF magic) -----------------
+[[signature]]
+id = "raw.nef"
+family = "raw"
+extensions = ["nef", "nrw"]
+mime = "image/x-nikon-nef"
+tier = 1
+headers = [ { pattern = "4D 4D 00 2A" }, { pattern = "49 49 2A 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.arw"
+family = "raw"
+extensions = ["arw", "srf", "sr2"]
+mime = "image/x-sony-arw"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.dng"
+family = "raw"
+extensions = ["dng"]
+mime = "image/x-adobe-dng"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" }, { pattern = "4D 4D 00 2A" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.pef"
+family = "raw"
+extensions = ["pef"]
+mime = "image/x-pentax-pef"
+tier = 1
+headers = [ { pattern = "4D 4D 00 2A" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.srw"
+family = "raw"
+extensions = ["srw"]
+mime = "image/x-samsung-srw"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.3fr"
+family = "raw"
+extensions = ["3fr"]
+mime = "image/x-hasselblad-3fr"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.erf"
+family = "raw"
+extensions = ["erf"]
+mime = "image/x-epson-erf"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.kdc"
+family = "raw"
+extensions = ["kdc", "dcr"]
+mime = "image/x-kodak-kdc"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" }, { pattern = "4D 4D 00 2A" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.gpr"
+family = "raw"
+extensions = ["gpr"]
+mime = "image/x-gopro-gpr"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "raw.nev"
+family = "raw"
+extensions = ["nev"]
+mime = "video/x-nikon-nev"
+tier = 1
+headers = [ { pattern = "?? ?? ?? ?? 66 74 79 70" } ]  # Nikon N-RAW: MOV-like ISOBMFF
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]
+
+[[signature]]
+id = "raw.braw"
+family = "raw"
+extensions = ["braw"]
+mime = "video/x-blackmagic-braw"
+tier = 1
+headers = [ { pattern = "?? ?? ?? ?? 66 74 79 70 62 72 61 77" } ]  # ftyp brand `braw`
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]

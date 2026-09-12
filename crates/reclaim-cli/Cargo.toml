@@ -1,0 +1,33 @@
+[package]
+name = "reclaim-cli"
+description = "The `reclaim` command-line tool (Phase 0: list / info / doctor)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "reclaim"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block = { path = "../reclaim-block" }
+reclaim-platform-macos = { path = "../reclaim-platform-macos" }
+reclaim-sigs = { path = "../reclaim-sigs" }
+reclaim-carve = { path = "../reclaim-carve" }
+reclaim-session = { path = "../reclaim-session" }
+reclaim-report = { path = "../reclaim-report" }
+clap.workspace = true
+comfy-table.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

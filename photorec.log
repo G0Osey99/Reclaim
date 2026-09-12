@@ -1,0 +1,643 @@
+Using locale 'C'.
+
+
+Sat Sep 12 15:03:08 2026
+Command line: PhotoRec /log /d /tmp/pr-test/recup /cmd testdata/build/exfat-camera-delete.img search
+
+PhotoRec 7.2, Data Recovery Utility, February 2024
+Christophe GRENIER <grenier@cgsecurity.org>
+https://www.cgsecurity.org
+OS: Darwin, kernel 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:19:08 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6050) arm64
+Compiler: GCC 4.2
+ext2fs lib: none, ntfs lib: none, ewf lib: none, libjpeg: none, curses lib: ncurses 6.0
+User is not root!
+Hard disk list
+Disk testdata/build/exfat-camera-delete.img - 268 MB / 256 MiB - CHS 33 255 63 (RO), sector size=512
+
+Partition table type (auto): Intel
+Geometry from i386 MBR: head=255 sector=63
+Disk testdata/build/exfat-camera-delete.img - 268 MB / 256 MiB (RO)
+Partition table type: Intel
+Geometry from i386 MBR: head=255 sector=63
+get_geometry_from_list_part_aux head=255 nbr=1
+get_geometry_from_list_part_aux head=8 nbr=1
+get_geometry_from_list_part_aux head=16 nbr=1
+get_geometry_from_list_part_aux head=32 nbr=1
+get_geometry_from_list_part_aux head=64 nbr=1
+get_geometry_from_list_part_aux head=128 nbr=1
+get_geometry_from_list_part_aux head=240 nbr=1
+get_geometry_from_list_part_aux head=255 nbr=1
+     No partition             0   0  1    32 162  2     524288 [Whole disk]
+ 1 P HPFS - NTFS              0   1  1    32 161 63     524223
+     exFAT, blocksize=4096, 268 MB / 255 MiB
+743 first-level signatures enabled
+
+Analyse
+ 1 P HPFS - NTFS              0   1  1    32 161 63     524223
+     exFAT, blocksize=4096, 268 MB / 255 MiB
+Pass 0 (blocksize=512) STATUS_FIND_OFFSET
+blocksize=4096, offset=3584
+Elapsed time 0h00m00s
+Pass 1 (blocksize=4096) STATUS_EXT2_OFF
+/tmp/pr-test/recup.1/f0000704.apple	 767-782
+/tmp/pr-test/recup.1/f0000720.apple	 783-790
+/tmp/pr-test/recup.1/f0000728.apple	 791-798
+/tmp/pr-test/recup.1/f0000736.jpg	 799-1126
+/tmp/pr-test/recup.1/f0001064.apple	 1127-1134
+/tmp/pr-test/recup.1/f0001072.png	 1135-2486
+/tmp/pr-test/recup.1/f0002424.apple	 2487-2494
+/tmp/pr-test/recup.1/f0002432.mp4	 2495-2918
+/tmp/pr-test/recup.1/f0002856.apple	 2919-4374
+/tmp/pr-test/recup.1/f0004312.apple	 4375-4382
+/tmp/pr-test/recup.1/f0004320.jpg	 4383-5550
+/tmp/pr-test/recup.1/f0005488.apple	 5551-5558
+/tmp/pr-test/recup.1/f0005496.png	 5559-6790
+/tmp/pr-test/recup.1/f0006728.apple	 6791-6798
+/tmp/pr-test/recup.1/f0006736.mp4	 6799-6982
+/tmp/pr-test/recup.1/f0006920.apple	 6983-7646
+/tmp/pr-test/recup.1/f0007584.apple	 7647-7654
+/tmp/pr-test/recup.1/f0008048.apple	 8111-8118
+/tmp/pr-test/recup.1/f0008056.png	 8119-8870
+/tmp/pr-test/recup.1/f0008808.apple	 8871-8878
+/tmp/pr-test/recup.1/f0008816.mp4	 8879-9294
+/tmp/pr-test/recup.1/f0009232.apple	 9295-10054
+/tmp/pr-test/recup.1/f0009992.apple	 10055-10062
+/tmp/pr-test/recup.1/f0010000.jpg	 10063-11406
+/tmp/pr-test/recup.1/f0011344.apple	 11407-11414
+/tmp/pr-test/recup.1/f0011352.png	 11415-12230
+/tmp/pr-test/recup.1/f0012168.apple	 12231-12238
+/tmp/pr-test/recup.1/f0012176.mp4	 12239-13694
+/tmp/pr-test/recup.1/f0013632.apple	 13695-14854
+/tmp/pr-test/recup.1/f0014792.apple	 14855-14862
+/tmp/pr-test/recup.1/f0014800.jpg	 14863-16078
+/tmp/pr-test/recup.1/f0016016.apple	 16079-16086
+/tmp/pr-test/recup.1/f0016024.png	 16087-16478
+/tmp/pr-test/recup.1/f0016416.apple	 16479-16486
+/tmp/pr-test/recup.1/f0016424.mp4	 16487-17790
+/tmp/pr-test/recup.1/f0017728.apple	 17791-17846
+/tmp/pr-test/recup.1/f0017784.apple	 17847-17854
+/tmp/pr-test/recup.1/f0017792.jpg	 17855-19326
+/tmp/pr-test/recup.1/f0019272.apple	 19335-19342
+/tmp/pr-test/recup.1/f0019280.png	 19343-20870
+/tmp/pr-test/recup.1/f0020808.apple	 20871-20878
+/tmp/pr-test/recup.1/f0020816.mp4	 20879-20902
+/tmp/pr-test/recup.1/f0020840.apple	 20903-21622
+/tmp/pr-test/recup.1/f0021560.apple	 21623-21630
+/tmp/pr-test/recup.1/f0021568.jpg	 21631-22534
+/tmp/pr-test/recup.1/f0022472.apple	 22535-22542
+/tmp/pr-test/recup.1/f0022480.png	 22543-22886
+/tmp/pr-test/recup.1/f0022824.apple	 22887-22894
+/tmp/pr-test/recup.1/f0022832.mp4	 22895-24262
+/tmp/pr-test/recup.1/f0024200.apple	 24263-24326
+/tmp/pr-test/recup.1/f0024264.apple	 24327-24334
+/tmp/pr-test/recup.1/f0024272.jpg	 24335-24910
+/tmp/pr-test/recup.1/f0024848.apple	 24911-24918
+/tmp/pr-test/recup.1/f0024856.png	 24919-25310
+/tmp/pr-test/recup.1/f0025248.apple	 25311-25318
+/tmp/pr-test/recup.1/f0025256.mp4	 25319-25822
+/tmp/pr-test/recup.1/f0025760.apple	 25823-27326
+/tmp/pr-test/recup.1/f0027264.apple	 27327-27334
+/tmp/pr-test/recup.1/f0027352.apple	 27415-27422
+/tmp/pr-test/recup.1/f0027360.png	 27423-28030
+/tmp/pr-test/recup.1/f0027968.apple	 28031-28038
+/tmp/pr-test/recup.1/f0027976.mp4	 28039-29158
+/tmp/pr-test/recup.1/f0029096.apple	 29159-30566
+/tmp/pr-test/recup.1/f0030504.apple	 30567-30574
+/tmp/pr-test/recup.1/f0031112.apple	 31175-31182
+/tmp/pr-test/recup.1/f0031120.png	 31183-32214
+/tmp/pr-test/recup.1/f0032152.apple	 32215-32222
+/tmp/pr-test/recup.1/f0032160.mp4	 32223-33390
+/tmp/pr-test/recup.1/f0033328.apple	 33391-34686
+/tmp/pr-test/recup.1/f0034624.apple	 34687-34694
+/tmp/pr-test/recup.1/f0035104.apple	 35167-35174
+/tmp/pr-test/recup.1/f0035112.png	 35175-36494
+/tmp/pr-test/recup.1/f0036440.apple	 36503-36510
+/tmp/pr-test/recup.1/f0036448.mp4	 36511-37918
+/tmp/pr-test/recup.1/f0037856.apple	 37919-38430
+/tmp/pr-test/recup.1/f0038368.apple	 38431-38438
+/tmp/pr-test/recup.1/f0038376.jpg	 38439-38486
+/tmp/pr-test/recup.1/f0038424.apple	 38487-38494
+/tmp/pr-test/recup.1/f0038432.png	 38495-39966
+/tmp/pr-test/recup.1/f0039904.apple	 39967-39974
+/tmp/pr-test/recup.1/f0039912.mp4	 39975-40878
+/tmp/pr-test/recup.1/f0040816.apple	 40879-41382
+/tmp/pr-test/recup.1/f0041320.gz	 41383-41390
+/tmp/pr-test/recup.1/f0041328.gz	 41391-41398
+Elapsed time 0h00m00s
+Pass 1 +84 files
+apple: 50/50 recovered
+png: 12/12 recovered
+mov: 12/12 recovered
+jpg: 8/12 recovered
+gz: 2/2 recovered
+Total: 84 files found
+
+485216 sectors contain unknown data, 4 invalid files found and rejected.
+PhotoRec exited normally.
+Using locale 'C'.
+
+
+Sat Sep 12 15:03:28 2026
+Command line: PhotoRec /log /d /tmp/reclaim-bench/apfs-delete-history/photorec/recup /cmd testdata/build/apfs-delete-history.img search
+
+PhotoRec 7.2, Data Recovery Utility, February 2024
+Christophe GRENIER <grenier@cgsecurity.org>
+https://www.cgsecurity.org
+OS: Darwin, kernel 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:19:08 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6050) arm64
+Compiler: GCC 4.2
+ext2fs lib: none, ntfs lib: none, ewf lib: none, libjpeg: none, curses lib: ncurses 6.0
+User is not root!
+Hard disk list
+Disk testdata/build/apfs-delete-history.img - 536 MB / 512 MiB - CHS 66 255 63 (RO), sector size=512
+
+Partition table type (auto): EFI GPT
+Disk testdata/build/apfs-delete-history.img - 536 MB / 512 MiB (RO)
+Partition table type: EFI GPT
+       0 0000 0000 00 00 00 00 00 00 00 00
+     Unknown                        0    1048575    1048576 [Whole disk]
+ 1 P Apple APFS                    40    1048535    1048496
+743 first-level signatures enabled
+
+Analyse
+ 1 P Apple APFS                    40    1048535    1048496
+Pass 0 (blocksize=512) STATUS_FIND_OFFSET
+blocksize=4096, offset=0
+Elapsed time 0h00m00s
+Pass 1 (blocksize=4096) STATUS_EXT2_OFF
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0003856.gz	 3896-3911
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0003872.gz	 3912-3919
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0005608.txt	 5648-5847
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0006264.png	 6304-6775
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0006792.mp4	 6832-7023
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0007040.txt	 7080-7671
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0007688.jpg	 7728-8463
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0008488.png	 8528-9111
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0009144.mp4	 9184-9591
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0009624.txt	 9664-10559
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0010696.png	 10736-10967
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0011000.mp4	 11040-11511
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0011544.txt	 11584-12607
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0012640.jpg	 12680-13647
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0013608.png	 13648-13895
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0013928.mp4	 13968-14183
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0014216.txt	 14256-14303
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0014944.png	 14984-15543
+file_mov.c: unknown atom 0xee9e1192 at 319488
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0015576.mp4	 15616-16239
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0016272.txt	 16312-17039
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0017632.png	 17672-18559
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0018600.mp4	 18640-19591
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0019632.txt	 19672-19935
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0020344.png	 20384-20423
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0020456.mp4	 20496-21015
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0021056.txt	 21096-21567
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0021608.jpg	 21648-22615
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0022656.png	 22696-22999
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0023040.mp4	 23080-23327
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0023360.txt	 23400-23951
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0023984.jpg	 24024-24935
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0024896.png	 24936-25559
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0025600.mp4	 25640-26055
+/tmp/reclaim-bench/apfs-delete-history/photorec/recup.1/f0026096.txt	 26136-26943
+Elapsed time 0h00m00s
+Pass 1 +34 files
+txt: 10/10 recovered
+mov: 9/9 recovered
+png: 9/9 recovered
+jpg: 4/8 recovered
+gz: 2/2 recovered
+Total: 34 files found
+
+1031304 sectors contain unknown data, 4 invalid files found and rejected.
+PhotoRec exited normally.
+Using locale 'C'.
+
+
+Sat Sep 12 15:03:29 2026
+Command line: PhotoRec /log /d /tmp/reclaim-bench/exfat-camera-delete/photorec/recup /cmd testdata/build/exfat-camera-delete.img search
+
+PhotoRec 7.2, Data Recovery Utility, February 2024
+Christophe GRENIER <grenier@cgsecurity.org>
+https://www.cgsecurity.org
+OS: Darwin, kernel 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:19:08 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6050) arm64
+Compiler: GCC 4.2
+ext2fs lib: none, ntfs lib: none, ewf lib: none, libjpeg: none, curses lib: ncurses 6.0
+User is not root!
+Hard disk list
+Disk testdata/build/exfat-camera-delete.img - 268 MB / 256 MiB - CHS 33 255 63 (RO), sector size=512
+
+Partition table type (auto): Intel
+Geometry from i386 MBR: head=255 sector=63
+Disk testdata/build/exfat-camera-delete.img - 268 MB / 256 MiB (RO)
+Partition table type: Intel
+Geometry from i386 MBR: head=255 sector=63
+get_geometry_from_list_part_aux head=255 nbr=1
+get_geometry_from_list_part_aux head=8 nbr=1
+get_geometry_from_list_part_aux head=16 nbr=1
+get_geometry_from_list_part_aux head=32 nbr=1
+get_geometry_from_list_part_aux head=64 nbr=1
+get_geometry_from_list_part_aux head=128 nbr=1
+get_geometry_from_list_part_aux head=240 nbr=1
+get_geometry_from_list_part_aux head=255 nbr=1
+     No partition             0   0  1    32 162  2     524288 [Whole disk]
+ 1 P HPFS - NTFS              0   1  1    32 161 63     524223
+     exFAT, blocksize=4096, 268 MB / 255 MiB
+743 first-level signatures enabled
+
+Analyse
+ 1 P HPFS - NTFS              0   1  1    32 161 63     524223
+     exFAT, blocksize=4096, 268 MB / 255 MiB
+Pass 0 (blocksize=512) STATUS_FIND_OFFSET
+blocksize=4096, offset=3584
+Elapsed time 0h00m00s
+Pass 1 (blocksize=4096) STATUS_EXT2_OFF
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0000704.apple	 767-782
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0000720.apple	 783-790
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0000728.apple	 791-798
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0000736.jpg	 799-1126
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0001064.apple	 1127-1134
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0001072.png	 1135-2486
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0002424.apple	 2487-2494
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0002432.mp4	 2495-2918
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0002856.apple	 2919-4374
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0004312.apple	 4375-4382
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0004320.jpg	 4383-5550
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0005488.apple	 5551-5558
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0005496.png	 5559-6790
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0006728.apple	 6791-6798
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0006736.mp4	 6799-6982
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0006920.apple	 6983-7646
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0007584.apple	 7647-7654
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0008048.apple	 8111-8118
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0008056.png	 8119-8870
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0008808.apple	 8871-8878
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0008816.mp4	 8879-9294
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0009232.apple	 9295-10054
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0009992.apple	 10055-10062
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0010000.jpg	 10063-11406
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0011344.apple	 11407-11414
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0011352.png	 11415-12230
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0012168.apple	 12231-12238
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0012176.mp4	 12239-13694
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0013632.apple	 13695-14854
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0014792.apple	 14855-14862
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0014800.jpg	 14863-16078
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0016016.apple	 16079-16086
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0016024.png	 16087-16478
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0016416.apple	 16479-16486
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0016424.mp4	 16487-17790
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0017728.apple	 17791-17846
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0017784.apple	 17847-17854
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0017792.jpg	 17855-19326
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0019272.apple	 19335-19342
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0019280.png	 19343-20870
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0020808.apple	 20871-20878
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0020816.mp4	 20879-20902
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0020840.apple	 20903-21622
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0021560.apple	 21623-21630
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0021568.jpg	 21631-22534
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0022472.apple	 22535-22542
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0022480.png	 22543-22886
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0022824.apple	 22887-22894
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0022832.mp4	 22895-24262
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0024200.apple	 24263-24326
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0024264.apple	 24327-24334
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0024272.jpg	 24335-24910
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0024848.apple	 24911-24918
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0024856.png	 24919-25310
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0025248.apple	 25311-25318
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0025256.mp4	 25319-25822
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0025760.apple	 25823-27326
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0027264.apple	 27327-27334
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0027352.apple	 27415-27422
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0027360.png	 27423-28030
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0027968.apple	 28031-28038
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0027976.mp4	 28039-29158
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0029096.apple	 29159-30566
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0030504.apple	 30567-30574
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0031112.apple	 31175-31182
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0031120.png	 31183-32214
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0032152.apple	 32215-32222
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0032160.mp4	 32223-33390
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0033328.apple	 33391-34686
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0034624.apple	 34687-34694
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0035104.apple	 35167-35174
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0035112.png	 35175-36494
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0036440.apple	 36503-36510
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0036448.mp4	 36511-37918
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0037856.apple	 37919-38430
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0038368.apple	 38431-38438
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0038376.jpg	 38439-38486
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0038424.apple	 38487-38494
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0038432.png	 38495-39966
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0039904.apple	 39967-39974
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0039912.mp4	 39975-40878
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0040816.apple	 40879-41382
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0041320.gz	 41383-41390
+/tmp/reclaim-bench/exfat-camera-delete/photorec/recup.1/f0041328.gz	 41391-41398
+Elapsed time 0h00m00s
+Pass 1 +84 files
+apple: 50/50 recovered
+png: 12/12 recovered
+mov: 12/12 recovered
+jpg: 8/12 recovered
+gz: 2/2 recovered
+Total: 84 files found
+
+485216 sectors contain unknown data, 4 invalid files found and rejected.
+PhotoRec exited normally.
+Using locale 'C'.
+
+
+Sat Sep 12 15:03:30 2026
+Command line: PhotoRec /log /d /tmp/reclaim-bench/fat32-usb-delete/photorec/recup /cmd testdata/build/fat32-usb-delete.img search
+
+PhotoRec 7.2, Data Recovery Utility, February 2024
+Christophe GRENIER <grenier@cgsecurity.org>
+https://www.cgsecurity.org
+OS: Darwin, kernel 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:19:08 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6050) arm64
+Compiler: GCC 4.2
+ext2fs lib: none, ntfs lib: none, ewf lib: none, libjpeg: none, curses lib: ncurses 6.0
+User is not root!
+Hard disk list
+Disk testdata/build/fat32-usb-delete.img - 268 MB / 256 MiB - CHS 33 255 63 (RO), sector size=512
+
+Partition table type (auto): Intel
+Geometry from i386 MBR: head=255 sector=63
+Disk testdata/build/fat32-usb-delete.img - 268 MB / 256 MiB (RO)
+Partition table type: Intel
+Geometry from i386 MBR: head=255 sector=63
+heads/cylinder 32 (FAT) != 255 (HD)
+sect/track 32 (FAT) != 63 (HD)
+get_geometry_from_list_part_aux head=255 nbr=1
+get_geometry_from_list_part_aux head=8 nbr=1
+get_geometry_from_list_part_aux head=16 nbr=1
+get_geometry_from_list_part_aux head=32 nbr=1
+get_geometry_from_list_part_aux head=64 nbr=1
+get_geometry_from_list_part_aux head=128 nbr=1
+get_geometry_from_list_part_aux head=240 nbr=1
+get_geometry_from_list_part_aux head=255 nbr=1
+     No partition             0   0  1    32 162  2     524288 [Whole disk]
+ 1 P FAT32                    0   1  1    32 161 63     524223 [USBSTICK]
+     FAT32, blocksize=512, 268 MB / 255 MiB
+743 first-level signatures enabled
+
+Analyse
+ 1 P FAT32                    0   1  1    32 161 63     524223 [USBSTICK]
+     FAT32, blocksize=512, 268 MB / 255 MiB
+Pass 0 (blocksize=512) STATUS_FIND_OFFSET
+blocksize=512, offset=0
+Elapsed time 0h00m00s
+Pass 1 (blocksize=512) STATUS_EXT2_OFF
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0008099.fat	 8162-8162
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0008101.apple	 8164-8171
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0008109.jpg	 8172-8421
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0008359.apple	 8422-8429
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0008367.png	 8430-9031
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0008969.apple	 9032-9412
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0009350.apple	 9413-9420
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0009358.mp4	 9421-10278
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0010216.apple	 10279-10286
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0010224.jpg	 10287-11296
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0011234.apple	 11297-11304
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0011242.png	 11305-12178
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012116.apple	 12179-12413
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012351.apple	 12414-12421
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012359.mp4	 12422-12663
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012601.apple	 12664-12671
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012609.jpg	 12672-12973
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012911.apple	 12974-12981
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0012919.png	 12982-13331
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0013269.apple	 13332-14148
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0014086.apple	 14149-14156
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0014094.mp4	 14157-15162
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0015100.apple	 15163-15170
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0015108.jpg	 15171-15510
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0015448.apple	 15511-15518
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0015456.png	 15519-16462
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0016400.apple	 16463-17277
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0017215.apple	 17278-17285
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0017223.mp4	 17286-17665
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0017603.apple	 17666-17673
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0017611.jpg	 17674-17971
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0017909.apple	 17972-17979
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0017917.png	 17980-18963
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0018901.apple	 18964-19346
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0019284.apple	 19347-19354
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0019292.mp4	 19355-19442
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0019380.apple	 19443-19450
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0019388.jpg	 19451-20418
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0020356.apple	 20419-20426
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0020364.png	 20427-20692
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0020630.apple	 20693-21365
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0021303.apple	 21366-21373
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0021311.mp4	 21374-21583
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0021521.apple	 21584-21591
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0021529.jpg	 21592-21855
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0021793.apple	 21856-21863
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0021801.png	 21864-22467
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0022405.apple	 22468-23448
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0023386.apple	 23449-23456
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0023394.mp4	 23457-23736
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0023674.apple	 23737-23744
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0023682.jpg	 23745-24636
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0024574.apple	 24637-24644
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0024582.png	 24645-24924
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0024862.apple	 24925-25417
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0025355.apple	 25418-25425
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0025363.mp4	 25426-26171
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0026109.apple	 26172-26179
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0026117.jpg	 26180-26909
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0026847.apple	 26910-26917
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0026855.png	 26918-27749
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0027687.apple	 27750-27888
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0027826.apple	 27889-27896
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0027834.mp4	 27897-28556
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0028494.apple	 28557-28564
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0028502.jpg	 28565-28874
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0028812.apple	 28875-28882
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0028820.png	 28883-29878
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0029816.apple	 29879-30763
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0030701.apple	 30764-30771
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0030709.mp4	 30772-31455
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0031393.gz	 31456-31458
+/tmp/reclaim-bench/fat32-usb-delete/photorec/recup.1/f0031396.gz	 31459-31459
+Elapsed time 0h00m00s
+Pass 1 +72 files
+apple: 40/40 recovered
+jpg: 10/10 recovered
+png: 10/10 recovered
+mov: 10/10 recovered
+gz: 2/2 recovered
+Total: 72 files found
+
+500926 sectors contain unknown data, 0 invalid files found and rejected.
+PhotoRec exited normally.
+Using locale 'C'.
+
+
+Sat Sep 12 15:03:32 2026
+Command line: PhotoRec /log /d /tmp/reclaim-bench/hfsplus-delete/photorec/recup /cmd testdata/build/hfsplus-delete.img search
+
+PhotoRec 7.2, Data Recovery Utility, February 2024
+Christophe GRENIER <grenier@cgsecurity.org>
+https://www.cgsecurity.org
+OS: Darwin, kernel 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:19:08 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6050) arm64
+Compiler: GCC 4.2
+ext2fs lib: none, ntfs lib: none, ewf lib: none, libjpeg: none, curses lib: ncurses 6.0
+User is not root!
+Hard disk list
+Disk testdata/build/hfsplus-delete.img - 268 MB / 256 MiB - CHS 33 255 63 (RO), sector size=512
+
+Partition table type (auto): EFI GPT
+Disk testdata/build/hfsplus-delete.img - 268 MB / 256 MiB (RO)
+Partition table type: EFI GPT
+       0 0000 0000 00 00 00 00 00 00 00 00
+     Unknown                        0     524287     524288 [Whole disk]
+ 1 P Mac HFS                       40     524247     524208
+     HFS+ blocksize=4096 + Backup, 268 MB / 255 MiB
+743 first-level signatures enabled
+
+Analyse
+ 1 P Mac HFS                       40     524247     524208
+     HFS+ blocksize=4096 + Backup, 268 MB / 255 MiB
+Pass 0 (blocksize=512) STATUS_FIND_OFFSET
+blocksize=512, offset=0
+Elapsed time 0h00m00s
+Pass 1 (blocksize=512) STATUS_EXT2_OFF
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0000002.hfsp	 42-45
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0000241.hfsp	 281-284
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0000490.hfsp	 530-533
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0000739.hfsp	 779-782
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0000988.hfsp	 1028-1031
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0001237.hfsp	 1277-1280
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0001486.hfsp	 1526-1529
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0001735.hfsp	 1775-1778
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0002000.hfsp	 2040-2043
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0002257.hfsp	 2297-2300
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0002514.hfsp	 2554-2557
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0002771.hfsp	 2811-2814
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0003028.hfsp	 3068-3071
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0003285.hfsp	 3325-3328
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0003542.hfsp	 3582-3585
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0003807.hfsp	 3847-3850
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0004064.hfsp	 4104-4107
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0004321.hfsp	 4361-4364
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0004578.hfsp	 4618-4621
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0004851.hfsp	 4891-4894
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0005108.hfsp	 5148-5151
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0005365.hfsp	 5405-5408
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0005622.hfsp	 5662-5665
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0005879.hfsp	 5919-5922
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0006136.hfsp	 6176-6179
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0006393.hfsp	 6433-6436
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0006666.hfsp	 6706-6709
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0006923.hfsp	 6963-6966
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0007180.hfsp	 7220-7223
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0007437.hfsp	 7477-7480
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0007710.hfsp	 7750-7753
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0007991.hfsp	 8031-8034
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0008256.hfsp	 8296-8299
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0008521.hfsp	 8561-8564
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0008786.hfsp	 8826-8829
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0009051.hfsp	 9091-9094
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0009316.hfsp	 9356-9359
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0009581.hfsp	 9621-9624
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0009870.hfsp	 9910-9913
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0010135.hfsp	 10175-10178
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0010400.hfsp	 10440-10443
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0010665.hfsp	 10705-10708
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0010930.hfsp	 10970-10973
+File should not be bigger than 2048, stopped adding data
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0011131.hfsp	 11171-11174
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0110360.jpg	 110400-111101
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0111064.png	 111104-111933
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0111896.txt	 111936-111987
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0111952.mp4	 111992-112623
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0112808.png	 112848-113661
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0113624.txt	 113664-113795
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0113760.mp4	 113800-114445
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0114408.jpg	 114448-115173
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0115136.png	 115176-115521
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0115488.txt	 115528-115805
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0115768.mp4	 115808-116741
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0116840.png	 116880-117107
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0117072.txt	 117112-117739
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0117704.mp4	 117744-118629
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0118592.jpg	 118632-119411
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0119376.png	 119416-119589
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0119552.txt	 119592-120259
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0120224.mp4	 120264-120801
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0120944.png	 120984-121477
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0121440.txt	 121480-121625
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0121592.mp4	 121632-122043
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0122288.png	 122328-122513
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0122480.txt	 122520-123109
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0123072.mp4	 123112-123681
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0123648.jpg	 123688-124693
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0124656.png	 124696-125641
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0125608.txt	 125648-125847
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0125808.mp4	 125848-126173
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0126528.png	 126568-127551
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0127512.txt	 127552-127795
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0127760.mp4	 127800-128139
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0128128.png	 128168-128317
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0128280.txt	 128320-128845
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0128808.mp4	 128848-129251
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0129216.gz	 129256-129256
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0129224.gz	 129264-129264
+/tmp/reclaim-bench/hfsplus-delete/photorec/recup.1/f0524206.hfsp	 524246-524247
+Elapsed time 0h00m00s
+Pass 1 +36 files
+mov: 10/10 recovered
+txt: 10/10 recovered
+png: 10/10 recovered
+jpg: 4/9 recovered
+gz: 2/2 recovered
+Total: 36 files found
+
+506510 sectors contain unknown data, 5 invalid files found and rejected.
+PhotoRec exited normally.

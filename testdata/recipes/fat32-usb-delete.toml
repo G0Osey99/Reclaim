@@ -1,0 +1,18 @@
+# FAT32 USB-stick-style image: flat layout with mixed files, several deleted.
+# Mirrors docs/plan/09 §2 "fat32-usb-delete".
+name = "fat32-usb-delete"
+size_mb = 256
+scheme = "MBR"
+fs = "MS-DOS FAT32"
+volname = "USBSTICK"
+layout = "flat"
+
+[populate]
+files = 40
+families = ["jpeg", "png", "txt", "mp4"]
+min_kb = 8
+max_kb = 512
+
+[actions]
+delete_indices = [2, 5, 7, 11, 13, 17, 19, 23]
+apfs_churn = 0

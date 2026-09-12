@@ -1,0 +1,28 @@
+[package]
+name = "reclaim-session"
+description = "Reclaim session store: SQLite result database, deterministic ids, single-writer checkpointing, NDJSON events, scan planner (docs/plan/03 §2.5)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-carve.workspace = true
+reclaim-sigs.workspace = true
+rusqlite.workspace = true
+blake3.workspace = true
+crossbeam-channel.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+thiserror.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
