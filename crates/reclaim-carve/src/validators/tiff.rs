@@ -119,6 +119,11 @@ struct Walk {
     thumb_off: Option<u64>,
     thumb_len: Option<u64>,
     is_dng: bool,
+    /// Total IFD nodes still allowed to visit (bounds SubIFD recursion).
+    ifd_budget: u32,
+    /// Total value-array elements still allowed to read (bounds hostile TIFFs
+    /// with many large arrays — a fuzz-found DoS; see phase-1.md).
+    elem_budget: u64,
 }
 impl Walk {
     fn new() -> Self {
@@ -132,6 +137,8 @@ impl Walk {
             thumb_off: None,
             thumb_len: None,
             is_dng: false,
+            ifd_budget: 4096,
+            elem_budget: 2_000_000,
         }
     }
 }
@@ -148,9 +155,10 @@ fn walk_ifd_chain(
         return;
     }
     for _ in 0..MAX_IFDS {
-        if ifd_off == 0 || ifd_off + 2 > avail {
+        if ifd_off == 0 || ifd_off + 2 > avail || st.ifd_budget == 0 {
             return;
         }
+        st.ifd_budget -= 1;
         let cnt_b = read(ifd_off, 2);
         let count = ord.u16(&cnt_b, 0).unwrap_or(0);
         if count == 0 || count > MAX_ENTRIES {
@@ -170,6 +178,7 @@ fn walk_ifd_chain(
         let mut jpeg_len: Option<u64> = None;
         let mut sub_ifds: Vec<u64> = Vec::new();
         let mut exif_ifd: Option<u64> = None;
+        let mut elem_budget = st.elem_budget;
 
         for i in 0..count as usize {
             let base = i * 12;
@@ -179,9 +188,11 @@ fn walk_ifd_chain(
             let voff = base + 8;
             let tsize = type_size(typ);
             let total = tsize.saturating_mul(vc);
-            let values = |ord: &Order| -> Vec<u64> {
-                read_values(ord, &entries, voff, read, avail, typ, vc)
-            };
+            macro_rules! values {
+                () => {
+                    read_values(ord, &entries, voff, read, avail, typ, vc, &mut elem_budget)
+                };
+            }
             match tag {
                 271 => st.make = ascii_value(ord, &entries, voff, read, avail, total),
                 272 => st.model = ascii_value(ord, &entries, voff, read, avail, total),
@@ -192,18 +203,19 @@ fn walk_ifd_chain(
                         }
                     }
                 }
-                273 => strip_offs = values(ord),
-                279 => strip_counts = values(ord),
-                324 => tile_offs = values(ord),
-                325 => tile_counts = values(ord),
-                513 => jpeg_if = values(ord).first().copied(),
-                514 => jpeg_len = values(ord).first().copied(),
-                330 => sub_ifds = values(ord),
-                34665 => exif_ifd = values(ord).first().copied(),
+                273 => strip_offs = values!(),
+                279 => strip_counts = values!(),
+                324 => tile_offs = values!(),
+                325 => tile_counts = values!(),
+                513 => jpeg_if = values!().first().copied(),
+                514 => jpeg_len = values!().first().copied(),
+                330 => sub_ifds = values!(),
+                34665 => exif_ifd = values!().first().copied(),
                 0xC612 => st.is_dng = true,
                 _ => {}
             }
         }
+        st.elem_budget = elem_budget;
 
         for (o, c) in strip_offs.iter().zip(strip_counts.iter()) {
             st.max_extent = st.max_extent.max(o.saturating_add(*c));
@@ -218,7 +230,10 @@ fn walk_ifd_chain(
                 st.thumb_len = Some(l);
             }
         }
-        for s in sub_ifds {
+        for s in sub_ifds.into_iter().take(64) {
+            if st.ifd_budget == 0 {
+                break;
+            }
             walk_ifd_chain(ord, read, avail, s, depth + 1, st);
         }
         if let Some(e) = exif_ifd {
@@ -233,6 +248,7 @@ fn walk_ifd_chain(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_values(
     ord: &Order,
     entries: &[u8],
@@ -241,9 +257,17 @@ fn read_values(
     avail: u64,
     typ: u16,
     count: u64,
+    budget: &mut u64,
 ) -> Vec<u64> {
     let tsize = type_size(typ);
     let total = tsize.saturating_mul(count);
+    // Bound total work across the whole walk against hostile TIFFs.
+    let allow = count.min(*budget).min(16384);
+    *budget = budget.saturating_sub(allow);
+    if allow == 0 {
+        return Vec::new();
+    }
+    let read_cap = tsize.saturating_mul(allow).min(256 * 1024) as usize;
     let bytes: Vec<u8> = if total <= 4 {
         entries.get(voff..voff + 4).unwrap_or(&[]).to_vec()
     } else {
@@ -251,10 +275,10 @@ fn read_values(
         if off >= avail {
             return Vec::new();
         }
-        read(off, total.min(1 << 20) as usize)
+        read(off, read_cap)
     };
-    let n = count.min(65536) as usize;
-    let mut out = Vec::with_capacity(n);
+    let n = allow as usize;
+    let mut out = Vec::with_capacity(n.min(4096));
     for i in 0..n {
         let v = match typ {
             3 => ord.u16(&bytes, i * 2).map(u64::from),
