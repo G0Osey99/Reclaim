@@ -1,0 +1,21 @@
+[package]
+name = "reclaim-fs-core"
+description = "Reclaim filesystem-engine core: the FileSystem trait and the Entry/Extent/Bitmap/EntrySink types every fs-* metadata engine implements (docs/plan/03 §2.2)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+serde = { workspace = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

@@ -375,6 +375,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "fs-exfat"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
+ "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
+name = "fs-fat"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
+ "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
+name = "fs-ntfs"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
+ "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -758,11 +791,32 @@ dependencies = [
  "libc",
  "reclaim-block",
  "reclaim-carve",
+ "reclaim-part",
  "reclaim-platform-macos",
  "reclaim-report",
  "reclaim-session",
  "reclaim-sigs",
  "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "reclaim-fs-core"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "reclaim-part"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "serde",
  "tempfile",
 ]
 
@@ -796,9 +850,14 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "crossbeam-channel",
+ "fs-exfat",
+ "fs-fat",
+ "fs-ntfs",
  "libc",
  "reclaim-block",
  "reclaim-carve",
+ "reclaim-fs-core",
+ "reclaim-part",
  "reclaim-sigs",
  "rusqlite",
  "serde",
