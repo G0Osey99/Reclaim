@@ -11,3 +11,4 @@ pub mod report;
 pub mod results;
 pub mod scan;
 pub mod sigs;
+pub mod snapshots;

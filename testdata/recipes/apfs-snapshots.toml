@@ -1,0 +1,20 @@
+# APFS: a delete followed by light churn so the pre-delete state is still within
+# the shallow checkpoint descriptor ring (a real APFS snapshot cannot be created
+# on a detached image without tmutil / a private fs_snapshot_create helper — see
+# docs/build-log/phase-3.md; we rely on checkpoint history instead and log it).
+name = "apfs-snapshots"
+size_mb = 256
+scheme = "GPT"
+fs = "APFS"
+volname = "APFSSNAP"
+layout = "flat"
+
+[populate]
+files = 60
+families = ["jpeg", "png", "txt", "mp4"]
+min_kb = 4
+max_kb = 64
+
+[actions]
+delete_fraction = 0.25   # delete 15 files as the last data operation
+apfs_churn = 2           # 2 tiny transactions so the delete sits in-ring

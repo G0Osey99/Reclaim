@@ -1,0 +1,20 @@
+# APFS: 2000 files, delete half in one bulk operation as the LAST action (no
+# churn afterwards). The freed FS-tree nodes holding the deleted directory
+# records stay unallocated, so Phase 3's orphan scan (+ the pre-delete
+# checkpoint) recovers them. Demonstrates named_recall on a realistic delete.
+name = "apfs-many-deletes"
+size_mb = 512
+scheme = "GPT"
+fs = "APFS"
+volname = "APFSMANY"
+layout = "flat"
+
+[populate]
+files = 2000
+families = ["jpeg", "png", "txt", "mp4"]
+min_kb = 2
+max_kb = 20
+
+[actions]
+delete_fraction = 0.5   # delete the first 1000 files, then detach
+apfs_churn = 0

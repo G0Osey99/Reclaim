@@ -62,6 +62,11 @@ pub fn run(args: &RecoverArgs) -> CmdResult {
     let store = Store::open(&dir.join("session.sqlite"))
         .map_err(|e| CmdError::not_found(format!("open session {}: {e}", dir.display())))?;
     let source_id = read_source_id(&dir)?;
+    // A `mounted:` session copies live files from the walked directory by path,
+    // rather than reading device extents (docs/plan/06 §6, §8).
+    if let Some(root) = source_id.strip_prefix("mounted:") {
+        return recover_mounted(Path::new(root), &store, args, &dir, &source_id);
+    }
     let resolved = Resolved::from_source_id(&source_id).ok_or_else(|| {
         CmdError::not_found(format!("cannot reconstruct source from id {source_id:?}"))
     })?;
@@ -167,6 +172,123 @@ pub fn run(args: &RecoverArgs) -> CmdResult {
     } else {
         Ok(Exit::Success)
     }
+}
+
+/// Recover from a `mounted:` session by copying live/Trash files by path.
+fn recover_mounted(
+    root: &Path,
+    store: &Store,
+    args: &RecoverArgs,
+    dir: &Path,
+    source_id: &str,
+) -> CmdResult {
+    use std::os::unix::fs::MetadataExt;
+    // Refuse a destination on the same filesystem device as the source volume
+    // unless explicitly overridden (data-loss safety, docs/plan/07 §5).
+    if !args.allow_same_device {
+        let root_dev = std::fs::metadata(root).ok().map(|m| m.dev());
+        let mut anc = args.dest.as_path();
+        let dest_dev = loop {
+            if let Ok(m) = std::fs::metadata(anc) {
+                break Some(m.dev());
+            }
+            match anc.parent() {
+                Some(p) => anc = p,
+                None => break None,
+            }
+        };
+        if let (Some(a), Some(b)) = (root_dev, dest_dev) {
+            if a == b {
+                return Err(CmdError::new(
+                    Exit::Refused,
+                    format!(
+                        "destination {} is on the same volume as the mounted source — refusing. \
+                         Pass --allow-same-device-i-accept-data-loss to override.",
+                        args.dest.display()
+                    ),
+                ));
+            }
+        }
+    }
+
+    let mut filter = args.filter.clone();
+    if let Some(ids) = &args.ids {
+        filter.ids = Some(ids.clone());
+    } else if !args.all && filter.ids.is_none() && is_empty_filter(&filter) {
+        return Err(CmdError::new(
+            Exit::Usage,
+            "recover needs --all, --ids, or filters to select results",
+        ));
+    }
+    let records = store
+        .query(&filter)
+        .map_err(|e| CmdError::internal(e.to_string()))?;
+    std::fs::create_dir_all(&args.dest)
+        .map_err(|e| CmdError::internal(format!("create {}: {e}", args.dest.display())))?;
+
+    let mut manifest: Vec<serde_json::Value> = Vec::with_capacity(records.len());
+    let mut recovered = 0usize;
+    let mut missing = 0usize;
+    for rec in &records {
+        let src_file = root.join(rec.synth_path());
+        let rel = out_rel_path(rec, args.preserve_paths, args.flat);
+        let out_path = args.dest.join(&rel);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| CmdError::internal(format!("create dir: {e}")))?;
+        }
+        let final_path = match resolve_collision(&out_path, args.collision) {
+            Some(p) => p,
+            None => continue,
+        };
+        let bytes = match std::fs::read(&src_file) {
+            Ok(b) => b,
+            Err(_) => {
+                missing += 1;
+                continue; // the live file is gone (already emptied from Trash)
+            }
+        };
+        let mut digest = Digest::new(HashAlgo::Blake3);
+        digest.update(&bytes);
+        std::fs::write(&final_path, &bytes)
+            .map_err(|e| CmdError::internal(format!("write {}: {e}", final_path.display())))?;
+        recovered += 1;
+        let rel_final = final_path
+            .strip_prefix(&args.dest)
+            .unwrap_or(&final_path)
+            .to_string_lossy()
+            .to_string();
+        manifest.push(serde_json::json!({
+            "id": rec.id,
+            "path": rel_final,
+            "source_path": src_file.to_string_lossy(),
+            "len": bytes.len(),
+            "state": rec.state,
+            "blake3": digest.finalize_hex(),
+            "verified": args.verify,
+        }));
+        if !args.quiet {
+            eprintln!("recovered {rel_final} ({} bytes)", bytes.len());
+        }
+    }
+    let manifest_doc = serde_json::json!({
+        "source_id": source_id,
+        "session": dir.to_string_lossy(),
+        "count": manifest.len(),
+        "files": manifest,
+    });
+    std::fs::write(
+        args.dest.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest_doc).unwrap_or_else(|_| "{}".to_string()),
+    )
+    .map_err(|e| CmdError::internal(format!("write manifest: {e}")))?;
+    if !args.quiet {
+        eprintln!(
+            "recovered {recovered} file(s) to {} ({missing} no longer present).",
+            args.dest.display()
+        );
+    }
+    Ok(Exit::Success)
 }
 
 /// Read the source id from `source.json`.

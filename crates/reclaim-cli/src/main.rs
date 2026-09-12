@@ -267,6 +267,23 @@ enum Command {
         #[command(subcommand)]
         cmd: SigsCmd,
     },
+    /// List APFS snapshots + reachable checkpoints, or diff one against now.
+    Snapshots {
+        /// `diskN`, `/dev/rdiskN`, or an image file with an APFS container.
+        source: String,
+        #[command(subcommand)]
+        cmd: Option<SnapshotsCmd>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SnapshotsCmd {
+    /// List files present at a snapshot/checkpoint but absent now.
+    Diff {
+        /// Snapshot or checkpoint transaction id to diff against.
+        #[arg(long)]
+        from: u64,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -527,6 +544,11 @@ fn dispatch(cli: &Cli) -> Result<Exit, CmdError> {
         Command::Sigs { cmd } => match cmd {
             SigsCmd::List => commands::sigs::list(cli.json, cli.plain),
             SigsCmd::Test { file } => commands::sigs::test(file, cli.json),
+        },
+
+        Command::Snapshots { source, cmd } => match cmd {
+            None => commands::snapshots::list(source, cli.json),
+            Some(SnapshotsCmd::Diff { from }) => commands::snapshots::diff(source, *from, cli.json),
         },
     }
 }

@@ -1,0 +1,17 @@
+# Case-sensitive HFSX (HX): same recovery path as HFS+; verifies the engine
+# handles the case-sensitive signature and names.
+name = "hfsplus-case-sensitive"
+size_mb = 256
+scheme = "GPT"
+fs = "Case-sensitive Journaled HFS+"
+volname = "HFSX"
+layout = "flat"
+
+[populate]
+files = 40
+families = ["jpeg", "png", "txt", "mp4"]
+min_kb = 8
+max_kb = 200
+
+[actions]
+delete_indices = [1, 4, 7, 10, 13, 16, 19]

@@ -13,6 +13,8 @@ members = [
     "crates/fs-exfat",
     "crates/fs-fat",
     "crates/fs-ntfs",
+    "crates/fs-apfs",
+    "crates/fs-hfs",
     "crates/reclaim-session",
     "crates/reclaim-report",
     "crates/reclaim-cli",
@@ -74,6 +76,9 @@ reclaim-fs-core = { path = "crates/reclaim-fs-core" }
 fs-exfat = { path = "crates/fs-exfat" }
 fs-fat = { path = "crates/fs-fat" }
 fs-ntfs = { path = "crates/fs-ntfs" }
+# Phase 3 additions (APFS + HFS+ metadata engines).
+fs-apfs = { path = "crates/fs-apfs" }
+fs-hfs = { path = "crates/fs-hfs" }
 
 # Small, safe optimizations for the release CLI; tests stay debuggable.
 [profile.release]
