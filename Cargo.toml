@@ -54,6 +54,7 @@ memchr = "2"                                          # fast byte scans (MIT/Unl
 blake3 = "1"                                          # per-chunk + result hashing (Apache-2.0/CC0)
 sha2 = "0.10"                                         # optional SHA-256 for imaging (MIT/Apache-2.0)
 crossbeam-channel = "0.5"                             # bounded channels, single-writer (MIT/Apache-2.0)
+zstd = "0.13"                                         # optional image compression (MIT; C lib is BSD-3)
 toml = "0.8"                                          # catalog parsing in build.rs (MIT/Apache-2.0)
 rusqlite = { version = "0.32", features = ["bundled"] } # session store (MIT)
 reclaim-block = { path = "crates/reclaim-block" }

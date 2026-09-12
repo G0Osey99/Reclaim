@@ -17,6 +17,10 @@ libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# Imaging (Phase 1): per-chunk + whole-image hashing and optional compression.
+blake3.workspace = true
+sha2.workspace = true
+zstd.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

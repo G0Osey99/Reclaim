@@ -25,6 +25,7 @@ mod cache;
 mod error;
 mod fault;
 mod image_file;
+pub mod imaging;
 mod offset_view;
 pub mod open_log;
 mod raw_device;
