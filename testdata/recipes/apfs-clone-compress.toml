@@ -1,0 +1,20 @@
+# APFS: clonefile clones (cp -c) + transparently-compressed files
+# (ditto --hfsCompression → decmpfs xattr). Exercises the engine's clone and
+# compression handling; a few files are deleted too.
+name = "apfs-clone-compress"
+size_mb = 256
+scheme = "GPT"
+fs = "APFS"
+volname = "APFSCLONE"
+layout = "flat"
+
+[populate]
+files = 30
+families = ["jpeg", "png", "txt"]
+min_kb = 16
+max_kb = 128
+
+[actions]
+clone_count = 8
+compress_count = 8
+delete_indices = [20, 21, 22]

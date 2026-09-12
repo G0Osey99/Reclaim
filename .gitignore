@@ -28,3 +28,6 @@ crates/reclaim-fs-fuzz/Cargo.lock
 
 # PhotoRec run log (bench competitor output; not a source)
 photorec.log
+
+# Compiled APFS snapshot helper (source kept; binary is built on demand)
+scripts/apfs-snapshot-helper/snap

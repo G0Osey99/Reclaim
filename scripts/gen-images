@@ -281,8 +281,56 @@ def build(recipe_path: Path) -> Path:
 
         files_meta = build_files(rng, mount, layout, pop)
 
-        # Record ground truth BEFORE deletion.
+        # Optional clone (clonefile via `cp -c`) and transparent compression
+        # (`ditto --hfsCompression`) of the first live files, to exercise the
+        # engine's decmpfs / clone handling (docs/plan/04 §3.1, §3.2).
+        clone_count = int(actions.get("clone_count", 0))
+        compress_count = int(actions.get("compress_count", 0))
+        for i in range(min(clone_count, len(files_meta))):
+            src = mount / files_meta[i]["path"]
+            dst = mount / (files_meta[i]["path"] + ".clone")
+            run(["cp", "-c", str(src), str(dst)], check=False)
+        if compress_count > 0:
+            for i in range(min(compress_count, len(files_meta))):
+                src = mount / files_meta[i]["path"]
+                tmp = Path(str(src) + ".z")
+                # ditto --hfsCompression writes a decmpfs-compressed copy.
+                run(["ditto", "--hfsCompression", str(src), str(tmp)], check=False)
+                if tmp.exists():
+                    tmp.replace(src)
+        if clone_count or compress_count:
+            print(f"[{name}] clones={clone_count} compressed={compress_count}")
+
+        # HFS+ journal history: create → modify → delete cycles BEFORE the real
+        # deletions, so the journal is aged and the deletions we care about are
+        # its freshest entries (docs/plan/04 §3.2). Runs before deletes so it
+        # does not overwrite the target files' catalog records.
+        hfs_churn = int(actions.get("hfs_churn", 0))
+        if hfs_churn > 0:
+            print(f"[{name}] HFS+ journal churn: {hfs_churn} create/modify/delete")
+            for i in range(hfs_churn):
+                p = mount / f"jhist_{i}.dat"
+                with open(p, "wb") as f:
+                    f.write(bytes(rng.randrange(256) for _ in range(2048)))
+                os.sync()
+                with open(p, "ab") as f:
+                    f.write(b"appended")
+                os.sync()
+                p.unlink()
+
+        # Record ground truth BEFORE deletion. Deletion targets come from an
+        # explicit index list, or a fraction/stride over all files.
         delete_idx = set(actions.get("delete_indices", []))
+        frac = float(actions.get("delete_fraction", 0))
+        stride = int(actions.get("delete_stride", 0))
+        n = len(files_meta)
+        if frac > 0:
+            # Delete the first floor(n*frac) files (a bulk delete as the last op).
+            for i in range(int(n * frac)):
+                delete_idx.add(i)
+        if stride > 1:
+            for i in range(0, n, stride):
+                delete_idx.add(i)
         for i, meta in enumerate(files_meta):
             meta["deleted"] = i in delete_idx
 

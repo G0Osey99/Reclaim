@@ -1,0 +1,19 @@
+# Journaled HFS+ with create/modify/delete churn so previous catalog-node images
+# accumulate in the journal; Phase 3 recovers deleted records from the journal
+# and freed nodes (docs/plan/04 §3.2).
+name = "hfsplus-journal-history"
+size_mb = 256
+scheme = "GPT"
+fs = "Journaled HFS+"
+volname = "HFSJHIST"
+layout = "flat"
+
+[populate]
+files = 40
+families = ["jpeg", "png", "txt", "mp4"]
+min_kb = 8
+max_kb = 256
+
+[actions]
+delete_indices = [2, 5, 8, 11, 14, 17, 20, 23]
+hfs_churn = 20
