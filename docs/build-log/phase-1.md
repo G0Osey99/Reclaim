@@ -118,7 +118,10 @@
   lib resolves BSD-3), `check-readonly` (writes only in the imager dest, session,
   report, and CLI recover/preview — all allow-listed).
 - **Fuzzing:** a `cargo fuzz` target per validator (33). `scripts/fuzz-all.sh`
-  builds all and runs each **≥ 120 s**; run this session — <!--FUZZ_RESULT-->.
+  builds all and runs each **≥ 120 s** (nightly + `cargo-fuzz`). Run this
+  session: **all 33 targets passed clean, 0 crashes.** The first run surfaced a
+  `tiff` slow-unit (unbounded SubIFD recursion / huge value arrays) — fixed with
+  work budgets and re-fuzzed clean; the reproducer is kept as a corpus seed.
 - **Scan/resume:** interrupt at 40% → resume → identical result set
   (`crates/reclaim-session/tests/resume.rs`).
 - **recover** refuses a same-disk destination (exit 5) unless the override flag
