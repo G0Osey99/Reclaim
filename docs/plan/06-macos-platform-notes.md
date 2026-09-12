@@ -15,7 +15,7 @@ These are the facts that shape what a Mac recovery tool can and cannot do. Items
 |------|-------------|
 | Block devices are `/dev/diskN` (buffered) and `/dev/rdiskN` (raw character device, unbuffered, requires reads aligned to the device block size). | Use `rdisk` for scanning: several times faster, and it bypasses the buffer cache so a failing drive isn't hammered by read-ahead. |
 | Opening `/dev/rdiskN` for reading requires **root** (device nodes are `root:operator 0640`). | GUI needs a privileged helper (`SMAppService.daemon(plistName:)` registered helper with XPC, macOS 13+); CLI runs via `sudo`. |
-| **Full Disk Access (TCC)** governs access to protected *user folders* (Desktop, Documents, Downloads, Mail, Messages, Time Machine backups, etc.) at the *file* level, and — since macOS 10.15 — is also required for a root process to read the raw device that backs the boot volume. **(Phase 0, §12 proof 2):** on macOS 26.6 (Apple Silicon, Mac17,6) a non-root process gets `EPERM` opening `/dev/rdisk0` — confirmed. The extra FDA gate for the boot device (root granted but FDA off ⇒ the raw read is still denied) is checked by `reclaim doctor` and `scripts/platform-proofs.sh`; the with/without-FDA `sudo` comparison is a **Manual** step (needs Ryker at the keyboard). | Ship an onboarding step that deep-links to *System Settings → Privacy & Security → Full Disk Access* and checks status by attempting a read. |
+| **Full Disk Access (TCC)** governs access to protected *user folders* (Desktop, Documents, Downloads, Mail, Messages, Time Machine backups, etc.) at the *file* level, and — since macOS 10.15 — is also required to read the raw device that backs the boot volume. **(Phase 0, §12 — two gates, verified):** the boot/container/Data `/dev/rdisk*` nodes have **two** independent gates: DAC (`root:operator 0640` → root *or* `operator` group) and TCC/FDA (uid-independent; root does **not** confer it). Critically, `sudo` satisfies DAC but *drops* the FDA attribution (the child re-parents away from the FDA-holding responsible process), so `sudo dd if=/dev/rdisk0` returns `EPERM` here even though FDA is granted. The working path is **non-sudo + `operator` group**. `reclaim doctor` should therefore check operator membership **and** FDA effectiveness, not just root. | Ship an onboarding step that deep-links to *System Settings → Privacy & Security → Full Disk Access* and checks status by attempting a read. |
 | **SIP** does not block reading raw devices for root, but blocks writing to system locations and blocks debugger attach. Some third-party guides say "disable SIP for recovery" — treat that as *last resort* and never require it. | Design so that Reclaim never needs SIP off. |
 | **System volume is sealed** (signed APFS snapshot). It contains no user data. | Never scan it by default; hide it behind an "advanced" toggle. |
 | **Data volume of the running system is in use.** Scanning it is possible (read-only) but the OS keeps writing (logs, Spotlight, caches) and TRIM on the internal SSD makes deleted blocks return zeros quickly. | Prominent warning: "Stop using this Mac; recover to an external drive; consider booting from an external installer / Recovery Mode." |
@@ -28,7 +28,7 @@ These are the facts that shape what a Mac recovery tool can and cannot do. Items
 ## 4. T2 and Apple Silicon: encryption at rest
 
 - On T2 Intel Macs and all Apple Silicon Macs, the internal SSD is **always hardware-encrypted** by the Secure Enclave, FileVault or not. Keys never leave the SEP. Chip-off / transplant recovery is impossible.
-- When you boot the same Mac (normal mode or Recovery Mode) the storage controller decrypts transparently; raw reads of the physical store return **plaintext container blocks** if FileVault is off, or **APFS-level-encrypted volume blocks** if FileVault is on until the volume is unlocked. **(Phase 0, §12 proof 3):** the device to read is the synthesized Data volume node — on this host `/dev/rdisk3s5` (`disk3s5`), FileVault **On**. Per vendor docs, while booted with the volume unlocked the storage controller/SEP decrypts transparently, so raw reads should return decrypted APFS blocks: `NXSB` on the container `/dev/rdisk3` and `APSB`/live structures on the volume device, rather than high-entropy ciphertext. The empirical raw read needs `sudo` and is a **Manual** step — run `scripts/platform-proofs.sh` (records NXSB/APSB hits vs byte-spread).
+- When you boot the same Mac (normal mode or Recovery Mode) the storage controller decrypts transparently; raw reads of the physical store return **plaintext container blocks** if FileVault is off, or **APFS-level-encrypted volume blocks** if FileVault is on until the volume is unlocked. **(Phase 0, §12 proof 3 — OPEN):** the device to read is the Data volume node — on this host `/dev/rdisk3s5` (`Encryption=true, FileVault=true`), its container `/dev/rdisk3`, physical store `/dev/rdisk0s2`. Read `NXSB` from the container/physical-store and `APSB` from the volume — never hardcode the synthesized numbers, resolve via `diskutil info /System/Volumes/Data`. Whether a raw read of the *unlocked* volume returns decrypted APFS (SEP decrypts transparently — expected) or ciphertext is **not yet empirically observed** (the read was DAC-blocked in the first run); close it via the operator-group + non-sudo path. The NXSB/APSB detector is validated on the unencrypted APFS golden image (5× NXSB, 66× APSB).
 - Apple Silicon has **no Target Disk Mode**. *Share Disk* (from Recovery) exposes the volume over SMB — file-level only; useless for undelete/carving. Therefore recovering an Apple Silicon internal disk means **running Reclaim on that Mac**, either in normal boot (Data volume unlocked) or from Recovery Mode/an external boot disk.
 - Intel Macs with T2 support Target Disk Mode; the volume still has to be unlocked with the user password or Personal Recovery Key on the host.
 - Practical product consequence: ship a **CLI binary that runs from Recovery Mode Terminal** (static-ish, no GUI frameworks, no notarization gate in Recovery, signed anyway) plus instructions for building a bootable external macOS with Reclaim preinstalled. This is an explicit roadmap item (M5).
@@ -93,29 +93,66 @@ Recorded during Phase 0 (build guide Part 4 step F). Test host, as enumerated by
   (`/System/Volumes/Data`), `disk3s6` VM.
 - **No external sacrificial device was attached at Phase 0 build time.**
 
-### Device names for the next phases
-- Boot physical store / whole internal disk: **`disk0`** (raw `/dev/rdisk0`).
-- Boot APFS container: **`disk3`** (raw `/dev/rdisk3`) — `NXSB` lives here.
-- **User-data recovery target:** **`disk3s5`** (raw `/dev/rdisk3s5`), FileVault On.
-- Golden test images (built, not committed): `testdata/build/*.img` with
-  `*.groundtruth.json` sidecars — scannable via `reclaim info <img>` (no root).
+### The two access gates (verified empirically 2026-09-12)
 
-### Proof outcomes
-Run all four with Ryker present: `sudo scripts/platform-proofs.sh` (results also
-appended to `testdata/build/platform-proofs.txt`).
+Raw internal devices are guarded by **two independent gates**, and conflating
+them caused the first proof run to misreport. Both were confirmed live on this
+host:
 
-| # | Proof | Phase 0 result |
-|---|-------|----------------|
-| 1 | `sudo` raw read of `/dev/rdiskN` for an attached `hdiutil` image and an external sacrificial device | **Non-root read denied (`EPERM`) confirmed.** The `sudo` raw read and the external device are **Manual (needs Ryker + a plugged-in sacrificial device)** — `scripts/platform-proofs.sh` attaches a golden image and reads its `/dev/rdiskN`, and reads `--ext-dev` if given. |
-| 2 | Raw read of the boot physical store with/without FDA | **Confirmed:** a non-root process gets `EPERM` on `/dev/rdisk0`; root is required. The with/without-Full-Disk-Access comparison for a *root* process needs `sudo` + toggling FDA in System Settings → **Manual (needs Ryker)**. `reclaim doctor` reports the live status. |
-| 3 | Do reads of the FileVault-unlocked Data volume return decrypted APFS blocks? | Device node identified: **`/dev/rdisk3s5`** (FileVault On). Expected (vendor docs): decrypted `NXSB`/`APSB` while booted+unlocked, not high-entropy ciphertext. The empirical raw read needs `sudo` → **Manual (needs Ryker)**; the script classifies NXSB/APSB magic vs byte-spread on `/dev/rdisk3` and `/dev/rdisk3s5`. |
-| 4 | TRIM timing: delete 100 MB, wait 60 s, check whether the extents read zeros — external SSD vs SD card vs internal | Internal SSD reports **`TRIM Support: Yes`**, and APFS discards free blocks immediately, so the internal extents are expected to read zeros within seconds (§3). The raw extent check needs `sudo` (F_LOG2PHYS extent → raw read of `/dev/rdisk3s5`) → **Manual (needs Ryker)**; external SSD/SD-card columns need sacrificial media plugged in (`--ext-dev/--ext-mount`). |
+- **DAC (Unix permissions).** `/dev/rdisk0`, `/dev/rdisk3`, `/dev/rdisk3s5` are
+  `crw-r----- root:operator`. Opening them needs **root** *or* membership in the
+  **`operator`** group. A plain non-root, non-operator process gets `EACCES`
+  ("Permission denied").
+- **TCC (Full Disk Access).** The boot / container / Data devices are
+  TCC-protected. FDA is attributed to the shell's **responsible process** and is
+  **uid-independent — root does not confer or inherit it**. On this host FDA is
+  already granted and effective for the Claude Code helper bundle
+  `com.anthropic.claude-code` (verified: this non-sudo shell reads
+  `~/Library/Messages/chat.db` and the system `TCC.db`, which shows
+  `kTCCServiceSystemPolicyAllFiles = 2` for that bundle). It is **not** granted
+  to `/Applications/Claude.app` (`com.anthropic.claudefordesktop`) or Terminal.
+- **The trap:** running the read under **`sudo`** satisfies DAC but re-parents the
+  process and **drops the FDA attribution**, so a sudo'd read of a TCC-protected
+  internal device returns `EPERM` ("Operation not permitted"). The decisive tell:
+  under the same `sudo` run, a *user-attached* `hdiutil` image node
+  (`/dev/rdisk4`, not TCC-protected) reads fine while `rdisk0/rdisk3/rdisk3s5` all
+  fail. **The reliable path is NON-sudo + operator group** (DAC via operator, TCC
+  via the already-effective helper FDA):
 
-### Manual items (Ryker)
-1. Run `sudo -v`, then `sudo scripts/platform-proofs.sh` to execute proofs 1–4 on
-   the internal disk and complete the with/without-FDA and decrypted-read checks.
-2. Plug in a sacrificial external SSD **and** an SD card (labelled "RECLAIM TEST —
-   ERASE OK", build guide Part 5.2), then re-run with
-   `--ext-dev rdiskN --ext-mount /Volumes/<NAME>` to fill the external TRIM
-   columns and the external raw-read row.
-3. Paste the resulting `testdata/build/platform-proofs.txt` block into this §12.
+  ```
+  sudo dseditgroup -o edit -a "$USER" -t user operator   # one-time
+  # quit & relaunch Claude Code (group membership applies to new sessions), then:
+  scripts/platform-proofs.sh                             # NO sudo
+  ```
+
+  Product implication for later phases: a user in `operator` with FDA can scan
+  raw devices **without sudo**; and `sudo reclaim scan <internal>` may hit the TCC
+  wall on the boot disk (but not on external/attached media, which is the primary
+  camera/SD use case). `reclaim doctor` should check operator membership + FDA
+  effectiveness, not just root.
+
+### Device names for the next phases (resolve at runtime, never hardcode)
+Synthesized disk numbers are dynamic (the attached test image already took
+`disk4`). Resolve via `diskutil info -plist /System/Volumes/Data` (Data volume +
+`APFSContainerReference`) and its physical store. On this host today:
+- Boot whole internal disk: **`disk0`** (`/dev/rdisk0`), physical store **`disk0s2`**.
+- Boot APFS container: **`disk3`** (`/dev/rdisk3`) — `NXSB` lives on the container /
+  physical store, **not** the volume node.
+- **User-data recovery target:** Data volume **`disk3s5`** (`/dev/rdisk3s5`),
+  `Encryption=true, FileVault=true`, mount `/System/Volumes/Data`. `APSB` lives here.
+- Golden test images (built, not committed): `testdata/build/*.img` +
+  `*.groundtruth.json` — scannable via `reclaim info <img>` (no root).
+
+### Proof outcomes (run 2026-09-12; re-run to close the deferred rows)
+
+| # | Proof | Result |
+|---|-------|--------|
+| 1 | Raw read of a `/dev/rdiskN` device works | **PASS.** A user-attached `hdiutil` image node `/dev/rdisk4` reads correctly — both under `sudo` and non-sudo (the node is user-owned, not TCC-protected). The `RawDevice` code path is proven against a real raw device. External-device arm: pending any external disk (read-only, **not** erasable). |
+| 2 | Raw read of the boot physical store; the FDA/permission gate | **PARTIAL / diagnosed.** Reads of `/dev/rdisk0` failed — root cause is the DAC-vs-TCC/`sudo`-drops-FDA trap above, **not** a missing FDA grant. To turn this into a clean PASS: operator group + non-sudo (script now classifies `EACCES` DAC vs `EPERM` TCC). **Deferred (needs Ryker: one-time operator add + app relaunch).** |
+| 3 | Does the FileVault-unlocked Data volume return decrypted APFS blocks? | **OPEN (genuine unknown).** Node identified (`/dev/rdisk3s5`, container `/dev/rdisk3`, store `/dev/rdisk0s2`). Data volume is `Encryption=true`. On Apple Silicon the SEP decrypts transparently when booted+unlocked, so a successful read is *expected* to show `NXSB`/`APSB`; a high-entropy result would mean ciphertext. Not yet observed (read was DAC-blocked). The detection method is validated: the unencrypted APFS golden image shows 5× `NXSB`, 66× `APSB`. **Deferred (same operator+non-sudo path).** |
+| 4 | TRIM timing (delete → wait → do extents read zeros?) | **Capability PASS; behavioral test deferred.** `system_profiler` reports `TRIM Support: Yes` for the internal SSD. The internal erasure-timing measurement is **not reliable** on the FileVault APFS boot volume (`F_LOG2PHYS` extent→raw-offset mapping is unusable on the encrypted, COW, snapshot-capable volume — verified: it returns garbage). The prior run's "reads ZEROS → TRIM happened" was a **false positive** (the raw read was denied → 0 bytes → miscounted as zeros) and is retracted. A clean behavioral test needs an **unencrypted external device** (§3 already establishes external USB/SD bridges usually do *not* TRIM). |
+
+### Manual items (Ryker) — none block Phase 1
+1. **Close proofs 2 & 3 (no media needed):** `sudo dseditgroup -o edit -a "$USER" -t user operator`, then **quit & relaunch Claude Code** (or use a fresh login shell), then run `scripts/platform-proofs.sh` **without sudo**. Record whether proof 3 shows DECRYPTED APFS or ciphertext.
+2. **External TRIM behavioral test (optional):** any external disk with ~100 MB free (need not be erasable) — `scripts/platform-proofs.sh --ext-dev diskN --ext-mount /Volumes/<NAME>`. Only a whole-device wipe test would need a truly erasable drive.
+3. Paste the resulting `testdata/build/platform-proofs.txt` block here.

@@ -68,10 +68,28 @@
 - All four build locally (no sudo): `exfat-camera-delete`, `fat32-usb-delete`,
   `apfs-delete-history` (churn 320), `hfsplus-delete`. Images gitignored.
 
-### F. Platform proofs
-- Results written into [doc 06 §12](../plan/06-macos-platform-notes.md) and the two
-  `[verify]` markers removed. Turnkey [scripts/platform-proofs.sh](../../scripts/platform-proofs.sh)
-  runs all four under `sudo`.
+### F. Platform proofs (run + diagnosed 2026-09-12)
+- Ryker ran [scripts/platform-proofs.sh](../../scripts/platform-proofs.sh); a
+  diagnose→adversarially-verify→synthesize workflow (12 agents) plus live probes
+  established the real picture, written into
+  [doc 06 §12](../plan/06-macos-platform-notes.md) (both `[verify]` markers gone):
+  - **Proof 1 — PASS:** a user-attached `hdiutil` image node reads raw (sudo and
+    non-sudo; the node is user-owned, not TCC-protected).
+  - **Two-gate finding:** internal `/dev/rdisk*` need **DAC** (`root:operator` →
+    root or `operator` group) **and** **TCC/FDA**. FDA is already granted+effective
+    for the Claude Code helper (`com.anthropic.claude-code`); **`sudo` drops the
+    FDA attribution**, so `sudo dd if=/dev/rdisk0` fails `EPERM`. The working path
+    is **non-sudo + `operator` group**. `reclaim doctor` now reports both gates and
+    classifies DAC vs TCC.
+  - **Proof 2 — diagnosed / deferred:** boot-store read fails on DAC (not missing
+    FDA). Closeable via operator-group + non-sudo.
+  - **Proof 3 — OPEN:** Data volume `disk3s5` (`Encryption=true, FileVault=true`);
+    whether the unlocked node returns decrypted APFS vs ciphertext is unproven
+    (read was DAC-blocked). NXSB/APSB detector validated on the golden image.
+  - **Proof 4 — capability PASS, behavioral retracted:** internal `TRIM Support:
+    Yes`; the earlier "reads ZEROS → TRIM happened" was a **false positive** (denied
+    read → 0 bytes miscounted). `F_LOG2PHYS` is unusable on the encrypted internal
+    volume; a clean erasure-timing test needs an unencrypted external device.
 
 ## Decisions made
 - **Docs relocated** to `docs/plan/` with `reclaim-build-guide.md` at repo root, to
@@ -117,17 +135,18 @@
 - Four golden images build locally with ground-truth sidecars.
 - doc 06 has no pending `[verify]` markers.
 
-## Manual items (Ryker)
-1. **Platform proofs need `sudo` + sacrificial media** (not available in this
-   session; `sudo` had no cached credentials and no external device was attached).
-   Run: `sudo -v && sudo scripts/platform-proofs.sh`, then re-run with
-   `--ext-dev rdiskN --ext-mount /Volumes/<NAME>` once a sacrificial external SSD
-   and SD card are plugged in. Paste the output block into doc 06 §12.
-2. **Sacrificial test media** (build guide Part 5.2): two SD cards + reader, one
-   FAT32 USB stick, one small external SSD/HDD, labelled "RECLAIM TEST — ERASE OK".
-   Record their BSD names for Phase 1.
-3. **CI first run:** confirm the GitHub Actions matrix is green on `dev/v1`
-   (especially the ubuntu-latest runner, which this session could not exercise).
+## Manual items (Ryker) — none block Phase 1
+1. **Close proofs 2 & 3 (NO media needed):** `sudo dseditgroup -o edit -a "$USER"
+   -t user operator`, then **quit & relaunch Claude Code** (group membership applies
+   to new sessions), then run `scripts/platform-proofs.sh` **without sudo**. This
+   closes the boot-store read and settles the proof-3 decrypted-vs-ciphertext
+   question. Do NOT toggle Full Disk Access — it is already granted and effective.
+2. **External TRIM behavioral test (optional):** any external disk with ~100 MB
+   free (need not be erasable): `scripts/platform-proofs.sh --ext-dev diskN
+   --ext-mount /Volumes/<NAME>`. Sacrificial (erasable) media is only needed for a
+   whole-device wipe test, and for Phase 1's manual SD-card spot-check.
+3. **CI:** GitHub Actions matrix is green on `dev/v1` (macos-latest + ubuntu-latest,
+   run 34705045746) — verified this session.
 
 ## Known gaps (deferred, with phase)
 - DiskArbitration appear/disappear callbacks → Phase 5 (GUI hot-plug).
