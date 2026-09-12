@@ -1,0 +1,22 @@
+[package]
+name = "fs-fat"
+description = "Reclaim FAT12/16/32 metadata engine: BPB + backup boot sector, LFN reconstruction, 0xE5 deleted entries, FAT32 first-cluster heuristics, dual-FAT compare (docs/plan/04 §3.4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-fs-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+reclaim-part.workspace = true
+tempfile.workspace = true

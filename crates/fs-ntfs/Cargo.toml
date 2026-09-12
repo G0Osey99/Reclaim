@@ -1,0 +1,22 @@
+[package]
+name = "fs-ntfs"
+description = "Reclaim NTFS metadata engine: $MFT runs, record walk with in-use flag, $FILE_NAME/$DATA/$STANDARD_INFORMATION, resident + non-resident runs, $Bitmap, orphan FILE0 scan, $I30 slack and $UsnJrnl:$J names (docs/plan/04 §3.3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-fs-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+reclaim-part.workspace = true
+tempfile.workspace = true
