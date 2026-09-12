@@ -1,0 +1,95 @@
+# Databases, mail, app data (docs/plan/05 §3.7).
+
+[[signature]]
+id = "db.sqlite"
+family = "db"
+extensions = ["sqlite", "db"]
+mime = "application/vnd.sqlite3"
+tier = 1
+headers = [ { pattern = "53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00" } ]
+size = { min = "512B", max = "16GiB" }
+strategy = "header_size"
+validator = "sqlite"
+metadata = []
+
+[[signature]]
+id = "db.sqlite_wal"
+family = "db"
+extensions = ["wal"]
+mime = "application/octet-stream"
+tier = 2
+headers = [ { pattern = "37 7F 06 82" }, { pattern = "37 7F 06 83" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "db.realm"
+family = "db"
+extensions = ["realm"]
+mime = "application/octet-stream"
+tier = 3
+headers = [ { pattern = "54 2D 44 42" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "db.mdb"
+family = "db"
+extensions = ["mdb", "accdb"]
+mime = "application/x-msaccess"
+tier = 2
+headers = [ { pattern = "00 01 00 00 53 74 61 6E 64 61 72 64 20 4A 65 74 20 44 42" }, { pattern = "00 01 00 00 53 74 61 6E 64 61 72 64 20 41 43 45 20 44 42" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "db.pst"
+family = "db"
+extensions = ["pst", "ost"]
+mime = "application/vnd.ms-outlook"
+tier = 2
+headers = [ { pattern = "21 42 44 4E" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "mail.mbox"
+family = "mail"
+extensions = ["mbox"]
+mime = "application/mbox"
+tier = 2
+headers = [ { pattern = "46 72 6F 6D 20" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "mail.eml"
+family = "mail"
+extensions = ["eml"]
+mime = "message/rfc822"
+tier = 2
+headers = [ { pattern = "52 65 63 65 69 76 65 64 3A" }, { pattern = "52 65 74 75 72 6E 2D 50 61 74 68 3A" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "app.keychain"
+family = "app"
+extensions = ["keychain-db", "keychain"]
+mime = "application/octet-stream"
+tier = 2
+headers = [ { pattern = "6B 79 63 68" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "app.git_pack"
+family = "app"
+extensions = ["pack"]
+mime = "application/octet-stream"
+tier = 3
+headers = [ { pattern = "50 41 43 4B 00 00 00 02" } ]
+strategy = "structural"
+metadata = []

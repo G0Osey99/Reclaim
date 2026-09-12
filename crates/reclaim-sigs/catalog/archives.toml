@@ -1,0 +1,188 @@
+# Archives & compression (docs/plan/05 §3.6).
+
+[[signature]]
+id = "archive.zip"
+family = "archive"
+extensions = ["zip", "jar", "apk", "ipa", "xpi"]
+mime = "application/zip"
+tier = 1
+# Local file header. Empty archive `50 4B 05 06`, spanned `50 4B 07 08`.
+headers = [ { pattern = "50 4B 03 04" }, { pattern = "50 4B 05 06" }, { pattern = "50 4B 07 08" } ]
+size = { min = "22B", max = "4GiB" }
+strategy = "structural"
+validator = "zip"
+metadata = []
+
+[[signature]]
+id = "archive.rar"
+family = "archive"
+extensions = ["rar"]
+mime = "application/vnd.rar"
+tier = 1
+headers = [ { pattern = "52 61 72 21 1A 07 00" }, { pattern = "52 61 72 21 1A 07 01 00" } ]
+size = { min = "20B", max = "16GiB" }
+strategy = "structural"
+validator = "rar"
+metadata = []
+
+[[signature]]
+id = "archive.7z"
+family = "archive"
+extensions = ["7z"]
+mime = "application/x-7z-compressed"
+tier = 1
+headers = [ { pattern = "37 7A BC AF 27 1C" } ]
+size = { min = "32B", max = "16GiB" }
+strategy = "structural"
+validator = "sevenz"
+metadata = []
+
+[[signature]]
+id = "archive.gzip"
+family = "archive"
+extensions = ["gz", "tgz"]
+mime = "application/gzip"
+tier = 1
+headers = [ { pattern = "1F 8B 08" } ]
+size = { min = "18B", max = "4GiB" }
+strategy = "structural"
+validator = "gzip"
+metadata = []
+
+[[signature]]
+id = "archive.bzip2"
+family = "archive"
+extensions = ["bz2"]
+mime = "application/x-bzip2"
+tier = 1
+headers = [ { pattern = "42 5A 68 31" }, { pattern = "42 5A 68 39" } ]
+size = { min = "14B", max = "4GiB" }
+strategy = "structural"
+validator = "bzip2"
+metadata = []
+
+[[signature]]
+id = "archive.xz"
+family = "archive"
+extensions = ["xz"]
+mime = "application/x-xz"
+tier = 1
+headers = [ { pattern = "FD 37 7A 58 5A 00" } ]
+footer = { pattern = "59 5A", search_max = "4GiB" }
+size = { min = "32B", max = "4GiB" }
+strategy = "structural"
+validator = "xz"
+metadata = []
+
+[[signature]]
+id = "archive.zstd"
+family = "archive"
+extensions = ["zst"]
+mime = "application/zstd"
+tier = 1
+headers = [ { pattern = "28 B5 2F FD" } ]
+size = { min = "8B", max = "16GiB" }
+strategy = "structural"
+validator = "zstd"
+metadata = []
+
+[[signature]]
+id = "archive.lz4"
+family = "archive"
+extensions = ["lz4"]
+mime = "application/x-lz4"
+tier = 2
+headers = [ { pattern = "04 22 4D 18" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "archive.tar"
+family = "archive"
+extensions = ["tar"]
+mime = "application/x-tar"
+tier = 1
+headers = [ { pattern = "75 73 74 61 72", offset = 257 } ]
+size = { min = "512B", max = "16GiB" }
+strategy = "structural"
+validator = "tar"
+metadata = []
+
+[[signature]]
+id = "archive.cab"
+family = "archive"
+extensions = ["cab"]
+mime = "application/vnd.ms-cab-compressed"
+tier = 2
+headers = [ { pattern = "4D 53 43 46" } ]
+strategy = "header_size"
+metadata = []
+
+[[signature]]
+id = "archive.dmg"
+family = "archive"
+extensions = ["dmg"]
+mime = "application/x-apple-diskimage"
+tier = 1
+# UDIF `koly` trailer, 512 bytes from EOF. Footer-anchored reverse carving: the
+# `dmg` validator reads the data-fork length from the trailer to compute start.
+headers = [ { pattern = "6B 6F 6C 79" } ]
+size = { min = "512B", max = "64GiB" }
+strategy = "structural"
+validator = "dmg"
+footer_anchored = true
+metadata = []
+
+[[signature]]
+id = "archive.xar"
+family = "archive"
+extensions = ["xar", "pkg"]
+mime = "application/x-xar"
+tier = 1
+headers = [ { pattern = "78 61 72 21" } ]
+size = { min = "28B", max = "8GiB" }
+strategy = "header_size"
+validator = "xar"
+metadata = []
+
+[[signature]]
+id = "archive.iso"
+family = "archive"
+extensions = ["iso"]
+mime = "application/x-iso9660-image"
+tier = 1
+headers = [ { pattern = "43 44 30 30 31", offset = 32769 } ]
+size = { min = "36KiB", max = "64GiB" }
+strategy = "structural"
+validator = "iso"
+metadata = []
+
+[[signature]]
+id = "archive.deb"
+family = "archive"
+extensions = ["deb"]
+mime = "application/vnd.debian.binary-package"
+tier = 3
+headers = [ { pattern = "21 3C 61 72 63 68 3E" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "archive.rpm"
+family = "archive"
+extensions = ["rpm"]
+mime = "application/x-rpm"
+tier = 3
+headers = [ { pattern = "ED AB EE DB" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "archive.stuffit"
+family = "archive"
+extensions = ["sit", "sitx"]
+mime = "application/x-stuffit"
+tier = 3
+headers = [ { pattern = "53 49 54 21" }, { pattern = "53 74 75 66 66 49 74" } ]
+strategy = "structural"
+metadata = []

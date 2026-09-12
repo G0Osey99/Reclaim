@@ -6,8 +6,15 @@ resolver = "2"
 members = [
     "crates/reclaim-block",
     "crates/reclaim-platform-macos",
+    "crates/reclaim-sigs",
+    "crates/reclaim-carve",
+    "crates/reclaim-session",
+    "crates/reclaim-report",
     "crates/reclaim-cli",
 ]
+# Fuzz crates are their own workspace (cargo-fuzz manages fuzz/Cargo.toml);
+# exclude them so `cargo build --workspace` on stable ignores the nightly target.
+exclude = ["crates/reclaim-carve/fuzz"]
 
 [workspace.package]
 version = "0.0.0"
@@ -41,6 +48,20 @@ comfy-table = "7"
 plist = "1"
 tempfile = "3"
 proptest = "1"
+# Phase 1 additions (all MIT/Apache-2.0/BSD — see deny.toml allow-list, Part 3.3).
+aho-corasick = "1"                                    # signature matcher (MIT/Unlicense)
+memchr = "2"                                          # fast byte scans (MIT/Unlicense)
+blake3 = "1"                                          # per-chunk + result hashing (Apache-2.0/CC0)
+sha2 = "0.10"                                         # optional SHA-256 for imaging (MIT/Apache-2.0)
+crossbeam-channel = "0.5"                             # bounded channels, single-writer (MIT/Apache-2.0)
+toml = "0.8"                                          # catalog parsing in build.rs (MIT/Apache-2.0)
+rusqlite = { version = "0.32", features = ["bundled"] } # session store (MIT)
+reclaim-block = { path = "crates/reclaim-block" }
+reclaim-platform-macos = { path = "crates/reclaim-platform-macos" }
+reclaim-sigs = { path = "crates/reclaim-sigs" }
+reclaim-carve = { path = "crates/reclaim-carve" }
+reclaim-session = { path = "crates/reclaim-session" }
+reclaim-report = { path = "crates/reclaim-report" }
 
 # Small, safe optimizations for the release CLI; tests stay debuggable.
 [profile.release]

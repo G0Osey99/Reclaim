@@ -1,0 +1,133 @@
+# Video (docs/plan/05 §3.3). ISOBMFF (mp4/mov) and Matroska are the Tier-1
+# camera formats. The `isobmff` validator refines ftyp brands into the specific
+# id (mp4/mov/m4a/heic/cr3); `mkv` walks EBML; `mpegts` checks sync-byte cadence.
+
+[[signature]]
+id = "video.mp4"
+family = "video"
+extensions = ["mp4", "m4v", "3gp", "3g2"]
+mime = "video/mp4"
+tier = 1
+headers = [ { pattern = "?? ?? ?? ?? 66 74 79 70" } ]
+size = { min = "32B", max = "16GiB" }
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]
+reassembly = true
+
+[[signature]]
+id = "video.mov"
+family = "video"
+extensions = ["mov", "qt"]
+mime = "video/quicktime"
+tier = 1
+# ftyp (brand `qt `) OR a classic QuickTime opener box (`wide`/`moov`) at +4.
+headers = [
+  { pattern = "?? ?? ?? ?? 66 74 79 70 71 74 20 20" },
+  { pattern = "?? ?? ?? ?? 77 69 64 65" },
+  { pattern = "?? ?? ?? ?? 6D 6F 6F 76" },
+]
+size = { min = "32B", max = "16GiB" }
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]
+reassembly = true
+
+[[signature]]
+id = "video.avi"
+family = "video"
+extensions = ["avi"]
+mime = "video/x-msvideo"
+tier = 1
+headers = [ { pattern = "52 49 46 46 ?? ?? ?? ?? 41 56 49 20" } ]
+size = { min = "32B", max = "16GiB" }
+strategy = "structural"
+validator = "riff"
+metadata = []
+
+[[signature]]
+id = "video.mkv"
+family = "video"
+extensions = ["mkv", "webm", "mka"]
+mime = "video/x-matroska"
+tier = 1
+headers = [ { pattern = "1A 45 DF A3" } ]
+size = { min = "32B", max = "16GiB" }
+strategy = "structural"
+validator = "mkv"
+metadata = []
+
+[[signature]]
+id = "video.mpeg_ts"
+family = "video"
+extensions = ["ts", "m2ts", "mts"]
+mime = "video/mp2t"
+tier = 1
+# Sync byte 0x47; the `mpegts` validator confirms >=5 consecutive 188/192-byte
+# packets before accepting.
+headers = [ { pattern = "47" } ]
+size = { min = "1KiB", max = "16GiB" }
+strategy = "structural"
+validator = "mpegts"
+metadata = []
+
+[[signature]]
+id = "video.mpeg_ps"
+family = "video"
+extensions = ["mpg", "mpeg", "vob"]
+mime = "video/mpeg"
+tier = 2
+headers = [ { pattern = "00 00 01 BA" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "video.mxf"
+family = "video"
+extensions = ["mxf"]
+mime = "application/mxf"
+tier = 2
+headers = [ { pattern = "06 0E 2B 34 02 05 01 01 0D 01 02 01 01 02" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "video.flv"
+family = "video"
+extensions = ["flv"]
+mime = "video/x-flv"
+tier = 2
+headers = [ { pattern = "46 4C 56 01" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "video.wmv_asf"
+family = "video"
+extensions = ["wmv", "asf", "wma"]
+mime = "video/x-ms-asf"
+tier = 2
+headers = [ { pattern = "30 26 B2 75 8E 66 CF 11 A6 D9 00 AA 00 62 CE 6C" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "video.rm"
+family = "video"
+extensions = ["rm", "rmvb"]
+mime = "application/vnd.rn-realmedia"
+tier = 3
+headers = [ { pattern = "2E 52 4D 46" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "video.ogv"
+family = "video"
+extensions = ["ogv"]
+mime = "video/ogg"
+tier = 2
+headers = [ { pattern = "4F 67 67 53" } ]
+strategy = "structural"
+validator = "ogg"
+metadata = []

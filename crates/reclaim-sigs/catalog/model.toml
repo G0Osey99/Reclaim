@@ -1,0 +1,148 @@
+# 3D, CAD, fonts, geo, misc (docs/plan/05 §3.10).
+
+[[signature]]
+id = "model.stl"
+family = "model"
+extensions = ["stl"]
+mime = "model/stl"
+tier = 1
+# Binary STL: 80-byte header + u32 triangle count → exact size 84 + 50n.
+# ASCII STL begins `solid `. The `stl` validator computes the binary size.
+headers = [ { pattern = "73 6F 6C 69 64 20" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "model.fbx"
+family = "model"
+extensions = ["fbx"]
+mime = "application/octet-stream"
+tier = 2
+headers = [ { pattern = "4B 61 79 64 61 72 61 20 46 42 58 20 42 69 6E 61 72 79" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "model.gltf"
+family = "model"
+extensions = ["glb"]
+mime = "model/gltf-binary"
+tier = 2
+headers = [ { pattern = "67 6C 54 46" } ]
+strategy = "header_size"
+metadata = []
+
+[[signature]]
+id = "model.blend"
+family = "model"
+extensions = ["blend"]
+mime = "application/x-blender"
+tier = 2
+headers = [ { pattern = "42 4C 45 4E 44 45 52" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "model.usdc"
+family = "model"
+extensions = ["usdc", "usdz"]
+mime = "model/vnd.usdz+zip"
+tier = 2
+headers = [ { pattern = "50 58 52 2D 55 53 44 43" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "model.3mf"
+family = "model"
+extensions = ["3mf"]
+mime = "model/3mf"
+tier = 2
+headers = [ { pattern = "50 4B 03 04" } ]
+strategy = "structural"
+validator = "zip"
+metadata = []
+
+[[signature]]
+id = "font.ttf"
+family = "font"
+extensions = ["ttf", "otf"]
+mime = "font/ttf"
+tier = 2
+headers = [ { pattern = "00 01 00 00 00" }, { pattern = "4F 54 54 4F" }, { pattern = "74 72 75 65" } ]
+strategy = "header_size"
+validator = "font"
+metadata = []
+
+[[signature]]
+id = "font.woff"
+family = "font"
+extensions = ["woff", "woff2"]
+mime = "font/woff"
+tier = 2
+headers = [ { pattern = "77 4F 46 46" }, { pattern = "77 4F 46 32" } ]
+strategy = "header_size"
+metadata = []
+
+[[signature]]
+id = "geo.gpx"
+family = "geo"
+extensions = ["gpx", "kml"]
+mime = "application/gpx+xml"
+tier = 2
+headers = [ { pattern = "3C 67 70 78" }, { pattern = "3C 6B 6D 6C" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "geo.fit"
+family = "geo"
+extensions = ["fit"]
+mime = "application/vnd.ant.fit"
+tier = 2
+headers = [ { pattern = "2E 46 49 54", offset = 8 } ]
+strategy = "header_size"
+metadata = []
+
+[[signature]]
+id = "misc.torrent"
+family = "misc"
+extensions = ["torrent"]
+mime = "application/x-bittorrent"
+tier = 3
+headers = [ { pattern = "64 38 3A 61 6E 6E 6F 75 6E 63 65" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "misc.swf"
+family = "misc"
+extensions = ["swf"]
+mime = "application/x-shockwave-flash"
+tier = 3
+headers = [ { pattern = "46 57 53" }, { pattern = "43 57 53" }, { pattern = "5A 57 53" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "misc.lnk"
+family = "misc"
+extensions = ["lnk"]
+mime = "application/x-ms-shortcut"
+tier = 3
+headers = [ { pattern = "4C 00 00 00 01 14 02 00" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "misc.ds_store"
+family = "misc"
+extensions = ["DS_Store"]
+mime = "application/octet-stream"
+tier = 3
+headers = [ { pattern = "00 00 00 01 42 75 64 31" } ]
+strategy = "structural"
+metadata = []

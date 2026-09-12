@@ -1,0 +1,215 @@
+# Raster images (docs/plan/05 §3.1). Magics taken from the primary format
+# specs. Corrections vs doc 05 are noted inline and in docs/build-log/phase-1.md.
+
+[[signature]]
+id = "image.jpeg"
+family = "image"
+extensions = ["jpg", "jpeg", "jpe"]
+mime = "image/jpeg"
+tier = 1
+# One anchor `FF D8 FF ??` covers every SOI+first-marker variant (APP0/APP1/DQT/
+# APP2/DHT/COM…) — doc 05 enumerated a subset; the wildcard is exact and broader.
+headers = [ { pattern = "FF D8 FF ??" } ]
+footer = { pattern = "FF D9", search_max = "256MiB" }
+size = { min = "107B", max = "256MiB" }
+strategy = "structural"
+validator = "jpeg"
+metadata = ["exif"]
+reassembly = true
+
+[[signature]]
+id = "image.png"
+family = "image"
+extensions = ["png"]
+mime = "image/png"
+tier = 1
+headers = [ { pattern = "89 50 4E 47 0D 0A 1A 0A" } ]
+footer = { pattern = "49 45 4E 44 AE 42 60 82", search_max = "256MiB" }
+size = { min = "67B", max = "256MiB" }
+strategy = "structural"
+validator = "png"
+metadata = []
+
+[[signature]]
+id = "image.gif"
+family = "image"
+extensions = ["gif"]
+mime = "image/gif"
+tier = 1
+headers = [ { pattern = "47 49 46 38 37 61" }, { pattern = "47 49 46 38 39 61" } ]
+footer = { pattern = "3B", search_max = "64MiB" }
+size = { min = "35B", max = "64MiB" }
+strategy = "structural"
+validator = "gif"
+metadata = []
+
+[[signature]]
+id = "image.bmp"
+family = "image"
+extensions = ["bmp", "dib"]
+mime = "image/bmp"
+tier = 1
+headers = [ { pattern = "42 4D" } ]
+size = { min = "58B", max = "512MiB" }
+strategy = "header_size"
+validator = "bmp"
+metadata = []
+
+[[signature]]
+id = "image.tiff"
+family = "image"
+extensions = ["tif", "tiff"]
+mime = "image/tiff"
+tier = 1
+headers = [ { pattern = "49 49 2A 00" }, { pattern = "4D 4D 00 2A" } ]
+size = { min = "16B", max = "1GiB" }
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "image.bigtiff"
+family = "image"
+extensions = ["tif", "tiff"]
+mime = "image/tiff"
+tier = 2
+headers = [ { pattern = "49 49 2B 00 08 00" }, { pattern = "4D 4D 00 2B 00 08" } ]
+strategy = "structural"
+validator = "tiff"
+metadata = ["exif"]
+
+[[signature]]
+id = "image.webp"
+family = "image"
+extensions = ["webp"]
+mime = "image/webp"
+tier = 1
+headers = [ { pattern = "52 49 46 46 ?? ?? ?? ?? 57 45 42 50" } ]
+size = { min = "20B", max = "256MiB" }
+strategy = "structural"
+validator = "riff"
+metadata = []
+
+[[signature]]
+id = "image.heif"
+family = "image"
+extensions = ["heic", "heif", "avif"]
+mime = "image/heif"
+tier = 1
+# ISOBMFF ftyp box: 4-byte size, then `ftyp`; brand at +8. Anchor on `ftyp`.
+headers = [ { pattern = "?? ?? ?? ?? 66 74 79 70" } ]
+size = { min = "32B", max = "512MiB" }
+strategy = "structural"
+validator = "isobmff"
+metadata = ["isobmff"]
+
+[[signature]]
+id = "image.jp2"
+family = "image"
+extensions = ["jp2", "j2k", "jpf"]
+mime = "image/jp2"
+tier = 2
+headers = [ { pattern = "00 00 00 0C 6A 50 20 20 0D 0A 87 0A" }, { pattern = "FF 4F FF 51" } ]
+strategy = "structural"
+validator = "isobmff"
+metadata = []
+
+[[signature]]
+id = "image.psd"
+family = "image"
+extensions = ["psd", "psb"]
+mime = "image/vnd.adobe.photoshop"
+tier = 1
+headers = [ { pattern = "38 42 50 53 00 01" }, { pattern = "38 42 50 53 00 02" } ]
+size = { min = "26B", max = "2GiB" }
+strategy = "header_size"
+validator = "psd"
+metadata = []
+
+[[signature]]
+id = "image.ico"
+family = "image"
+extensions = ["ico", "cur"]
+mime = "image/x-icon"
+tier = 3
+headers = [ { pattern = "00 00 01 00" }, { pattern = "00 00 02 00" } ]
+size = { min = "22B", max = "4MiB" }
+strategy = "header_size"
+validator = "ico"
+metadata = []
+
+[[signature]]
+id = "image.dds"
+family = "image"
+extensions = ["dds"]
+mime = "image/vnd.ms-dds"
+tier = 2
+headers = [ { pattern = "44 44 53 20" } ]
+strategy = "header_size"
+validator = "dds"
+metadata = []
+
+[[signature]]
+id = "image.exr"
+family = "image"
+extensions = ["exr"]
+mime = "image/x-exr"
+tier = 2
+headers = [ { pattern = "76 2F 31 01" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "image.hdr"
+family = "image"
+extensions = ["hdr"]
+mime = "image/vnd.radiance"
+tier = 3
+headers = [ { pattern = "23 3F 52 41 44 49 41 4E 43 45" } ]
+strategy = "statistical"
+metadata = []
+
+[[signature]]
+id = "image.xcf"
+family = "image"
+extensions = ["xcf"]
+mime = "image/x-xcf"
+tier = 2
+headers = [ { pattern = "67 69 6D 70 20 78 63 66 20" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "image.ai_eps"
+family = "image"
+extensions = ["eps", "ai"]
+mime = "application/postscript"
+tier = 2
+headers = [ { pattern = "25 21 50 53 2D 41 64 6F 62 65" } ]
+footer = { pattern = "25 25 45 4F 46", search_max = "256MiB" }
+strategy = "footer"
+metadata = []
+
+[[signature]]
+id = "image.tga"
+family = "image"
+extensions = ["tga"]
+mime = "image/x-tga"
+tier = 3
+# Footer-anchored: `TRUEVISION-XFILE.\0` at EOF. Detection only (start unknown
+# without decoding the header dimensions).
+headers = [ { pattern = "54 52 55 45 56 49 53 49 4F 4E 2D 58 46 49 4C 45 2E 00" } ]
+strategy = "fixed"
+footer_anchored = true
+metadata = []
+
+[[signature]]
+id = "image.svg"
+family = "image"
+extensions = ["svg"]
+mime = "image/svg+xml"
+tier = 2
+headers = [ { pattern = "3C 73 76 67" } ]
+footer = { pattern = "3C 2F 73 76 67 3E", search_max = "16MiB" }
+strategy = "footer"
+metadata = []

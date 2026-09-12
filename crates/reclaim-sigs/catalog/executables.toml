@@ -1,0 +1,96 @@
+# Executables, code, system (docs/plan/05 §3.8).
+
+[[signature]]
+id = "exec.macho"
+family = "exec"
+extensions = ["", "dylib", "bundle"]
+mime = "application/x-mach-binary"
+tier = 1
+headers = [
+  { pattern = "FE ED FA CE" },   # 32-bit BE
+  { pattern = "FE ED FA CF" },   # 64-bit BE
+  { pattern = "CE FA ED FE" },   # 32-bit LE
+  { pattern = "CF FA ED FE" },   # 64-bit LE
+  { pattern = "CA FE BA BE" },   # fat (disambiguated from Java .class by the validator)
+]
+size = { min = "28B", max = "2GiB" }
+strategy = "structural"
+validator = "macho"
+metadata = []
+
+[[signature]]
+id = "exec.elf"
+family = "exec"
+extensions = ["", "so", "elf"]
+mime = "application/x-elf"
+tier = 1
+headers = [ { pattern = "7F 45 4C 46" } ]
+size = { min = "52B", max = "2GiB" }
+strategy = "structural"
+validator = "elf"
+metadata = []
+
+[[signature]]
+id = "exec.pe"
+family = "exec"
+extensions = ["exe", "dll"]
+mime = "application/vnd.microsoft.portable-executable"
+tier = 1
+headers = [ { pattern = "4D 5A" } ]
+size = { min = "97B", max = "2GiB" }
+strategy = "structural"
+validator = "pe"
+metadata = []
+
+[[signature]]
+id = "exec.class"
+family = "exec"
+extensions = ["class"]
+mime = "application/java-vm"
+tier = 2
+headers = [ { pattern = "CA FE BA BE" } ]
+strategy = "structural"
+validator = "macho"
+metadata = []
+
+[[signature]]
+id = "exec.wasm"
+family = "exec"
+extensions = ["wasm"]
+mime = "application/wasm"
+tier = 2
+headers = [ { pattern = "00 61 73 6D" } ]
+strategy = "structural"
+validator = "wasm"
+metadata = []
+
+[[signature]]
+id = "exec.dex"
+family = "exec"
+extensions = ["dex"]
+mime = "application/x-dex"
+tier = 3
+headers = [ { pattern = "64 65 78 0A 30 33 35 00" } ]
+strategy = "header_size"
+metadata = []
+
+[[signature]]
+id = "exec.shell_script"
+family = "exec"
+extensions = ["sh", "py", "rb", "pl"]
+mime = "text/x-script"
+tier = 2
+headers = [ { pattern = "23 21 2F" }, { pattern = "23 21 20" } ]  # `#!/` or `#! `
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "sys.dyld_cache"
+family = "sys"
+extensions = []
+mime = "application/octet-stream"
+tier = 3
+headers = [ { pattern = "64 79 6C 64 5F 76 31" } ]
+strategy = "structural"
+metadata = []

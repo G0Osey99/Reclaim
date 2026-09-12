@@ -1,0 +1,116 @@
+# Disk images, VM & crypto containers (docs/plan/05 §3.9).
+
+[[signature]]
+id = "disk.vmdk"
+family = "disk"
+extensions = ["vmdk"]
+mime = "application/x-vmdk"
+tier = 2
+headers = [ { pattern = "4B 44 4D 56" }, { pattern = "23 20 44 69 73 6B 20 44 65 73 63 72 69 70 74 6F 72 46 69 6C 65" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "disk.vdi"
+family = "disk"
+extensions = ["vdi"]
+mime = "application/x-vdi"
+tier = 2
+headers = [ { pattern = "3C 3C 3C 20" } ]  # `<<< ` VirtualBox descriptor prefix
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "disk.vhd"
+family = "disk"
+extensions = ["vhd"]
+mime = "application/x-vhd"
+tier = 2
+headers = [ { pattern = "63 6F 6E 65 63 74 69 78" } ]  # `conectix` footer (also at file start in some)
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "disk.vhdx"
+family = "disk"
+extensions = ["vhdx"]
+mime = "application/x-vhdx"
+tier = 2
+headers = [ { pattern = "76 68 64 78 66 69 6C 65" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "disk.qcow2"
+family = "disk"
+extensions = ["qcow2", "qcow"]
+mime = "application/x-qemu-disk"
+tier = 2
+headers = [ { pattern = "51 46 49 FB" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "disk.e01"
+family = "disk"
+extensions = ["e01"]
+mime = "application/x-encase"
+tier = 2
+headers = [ { pattern = "45 56 46 09 0D 0A FF 00" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "crypto.luks"
+family = "crypto"
+extensions = []
+mime = "application/octet-stream"
+tier = 2
+headers = [ { pattern = "4C 55 4B 53 BA BE" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "crypto.bitlocker"
+family = "crypto"
+extensions = []
+mime = "application/octet-stream"
+tier = 2
+headers = [ { pattern = "EB 58 90 2D 46 56 45 2D 46 53 2D" } ]
+strategy = "structural"
+metadata = []
+
+[[signature]]
+id = "crypto.pgp"
+family = "crypto"
+extensions = ["gpg", "asc"]
+mime = "application/pgp"
+tier = 3
+headers = [ { pattern = "2D 2D 2D 2D 2D 42 45 47 49 4E 20 50 47 50" } ]
+strategy = "statistical"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "crypto.pem"
+family = "crypto"
+extensions = ["pem", "crt", "key"]
+mime = "application/x-pem-file"
+tier = 2
+headers = [ { pattern = "2D 2D 2D 2D 2D 42 45 47 49 4E 20" } ]
+footer = { pattern = "2D 2D 2D 2D 2D", search_max = "4MiB" }
+strategy = "footer"
+validator = "text"
+metadata = []
+
+[[signature]]
+id = "crypto.ssh_key"
+family = "crypto"
+extensions = []
+mime = "application/octet-stream"
+tier = 2
+headers = [ { pattern = "2D 2D 2D 2D 2D 42 45 47 49 4E 20 4F 50 45 4E 53 53 48 20 50 52 49 56 41 54 45 20 4B 45 59 2D 2D 2D 2D 2D" } ]
+footer = { pattern = "4B 45 59 2D 2D 2D 2D 2D", search_max = "1MiB" }
+strategy = "footer"
+validator = "text"
+metadata = []
