@@ -45,7 +45,13 @@ if [ -f "$ALLOWLIST" ]; then
     done < "$ALLOWLIST"
 fi
 
-RS_FILES="$(git ls-files '*.rs')"
+# Scan production sources only. Test-only files — integration tests (tests/),
+# benchmarks (benches/) and cargo-fuzz harnesses (fuzz_targets/) — never run
+# against a real source device; they write exclusively to OS temp dirs, so
+# their tempfile scaffolding is out of scope for the source-write guarantee.
+# (Inline `#[cfg(test)]` modules in src/ ARE still scanned, so production files
+# must stay clean; use `tempfile` there if a test truly needs a real file.)
+RS_FILES="$(git ls-files '*.rs' | grep -vE '(^|/)(tests|benches|fuzz_targets)/' || true)"
 if [ -z "$RS_FILES" ]; then
     echo "check-readonly: no Rust sources tracked yet — nothing to scan."
     exit 0

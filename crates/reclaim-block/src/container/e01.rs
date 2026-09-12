@@ -360,11 +360,11 @@ mod tests {
         buf.extend_from_slice(&desc("done", 0, 76));
         let _ = sectors_desc_next;
 
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("evidence.E01");
-        std::fs::File::create(&p).unwrap().write_all(&buf).unwrap();
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
 
-        let src = open(&p).unwrap();
+        let src = open(tf.path()).unwrap();
         assert_eq!(src.len(), 1024);
         let mut out = vec![0u8; 1024];
         let r = src.read_at(0, &mut out);

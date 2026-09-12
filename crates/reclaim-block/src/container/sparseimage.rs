@@ -105,11 +105,11 @@ mod tests {
         buf.extend_from_slice(&vec![0xAAu8; band]); // slot 1 = band 0
         buf.extend_from_slice(&vec![0xCCu8; band]); // slot 2 = band 2
 
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("x.sparseimage");
-        std::fs::File::create(&p).unwrap().write_all(&buf).unwrap();
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
 
-        let src = open(&p).unwrap();
+        let src = open(tf.path()).unwrap();
         assert_eq!(src.len(), 4 * 512);
         let mut out = vec![0x55u8; 4 * 512];
         assert!(src.read_at(0, &mut out).all_good());

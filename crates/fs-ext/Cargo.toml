@@ -1,0 +1,22 @@
+[package]
+name = "fs-ext"
+description = "Reclaim ext2/3/4 metadata engine: superblock + group-descriptor parse, inode extent/block-pointer recovery, directory-slack deleted-name recovery, jbd2 journal + extent-magic scans (docs/plan/04 §2 ext row)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-fs-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+reclaim-part.workspace = true
+tempfile.workspace = true

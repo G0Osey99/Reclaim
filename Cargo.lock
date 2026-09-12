@@ -453,6 +453,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-ext"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
+ "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
 name = "fs-fat"
 version = "0.0.0"
 dependencies = [
@@ -471,6 +482,16 @@ dependencies = [
  "reclaim-block",
  "reclaim-fs-core",
  "reclaim-part",
+ "tempfile",
+]
+
+[[package]]
+name = "fs-iso"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "reclaim-block",
+ "reclaim-fs-core",
  "tempfile",
 ]
 
@@ -961,8 +982,10 @@ dependencies = [
  "crossbeam-channel",
  "fs-apfs",
  "fs-exfat",
+ "fs-ext",
  "fs-fat",
  "fs-hfs",
+ "fs-iso",
  "fs-ntfs",
  "libc",
  "reclaim-block",

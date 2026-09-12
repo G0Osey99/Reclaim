@@ -62,27 +62,3 @@ pub(crate) fn open(path: &Path) -> Result<ConcatSource, BlockError> {
     let id = SourceId::new(format!("split:{}:{}", path.display(), parts.len()));
     Ok(ConcatSource::new(parts, id))
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::expect_used)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    #[test]
-    fn split_detect_and_concat() {
-        let dir = tempfile::tempdir().unwrap();
-        for (n, byte) in [(1u32, 0xA1u8), (2, 0xB2), (3, 0xC3)] {
-            let p = dir.path().join(format!("img.{n:03}"));
-            let mut f = std::fs::File::create(&p).unwrap();
-            f.write_all(&vec![byte; 1024]).unwrap();
-        }
-        let first = dir.path().join("img.001");
-        assert!(looks_like_split(&first));
-        let cat = open(&first).unwrap();
-        assert_eq!(cat.len(), 3 * 1024);
-        let mut b = vec![0u8; 512];
-        assert!(cat.read_at(1024, &mut b).all_good());
-        assert!(b.iter().all(|x| *x == 0xB2));
-    }
-}

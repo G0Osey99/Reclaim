@@ -25,7 +25,7 @@ struct EngineDef {
 
 /// The engine registry (order is priority on a probe tie). Phase 3 adds the
 /// APFS and HFS+ engines alongside the Phase-2 exFAT/FAT/NTFS ones.
-fn engines() -> [EngineDef; 5] {
+fn engines() -> [EngineDef; 7] {
     [
         EngineDef {
             name: "apfs",
@@ -51,6 +51,16 @@ fn engines() -> [EngineDef; 5] {
             name: "fat",
             probe: fs_fat::probe,
             open: fs_fat::open_boxed,
+        },
+        EngineDef {
+            name: "ext",
+            probe: fs_ext::probe,
+            open: fs_ext::open_boxed,
+        },
+        EngineDef {
+            name: "iso9660",
+            probe: fs_iso::probe,
+            open: fs_iso::open_boxed,
         },
     ]
 }
