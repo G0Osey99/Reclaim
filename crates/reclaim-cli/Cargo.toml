@@ -21,6 +21,7 @@ reclaim-block = { path = "../reclaim-block" }
 reclaim-platform-macos = { path = "../reclaim-platform-macos" }
 reclaim-sigs = { path = "../reclaim-sigs" }
 reclaim-carve = { path = "../reclaim-carve" }
+reclaim-part = { path = "../reclaim-part" }
 reclaim-session = { path = "../reclaim-session" }
 reclaim-report = { path = "../reclaim-report" }
 clap.workspace = true

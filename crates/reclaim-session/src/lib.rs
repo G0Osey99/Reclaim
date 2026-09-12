@@ -13,12 +13,14 @@
 
 pub mod events;
 pub mod id;
+pub mod meta;
 pub mod scan;
 pub mod store;
 
 pub use events::Event;
+pub use meta::MetaReport;
 pub use scan::{ScanConfig, ScanReport};
-pub use store::{CarvedRecord, QueryFilter, Sort, Store};
+pub use store::{CarvedRecord, EntryRow, QueryFilter, Sort, Store};
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -135,6 +137,13 @@ impl Session {
     /// Mutable store (for inserts during a scan).
     pub fn store_mut(&mut self) -> &mut Store {
         &mut self.store
+    }
+
+    /// Run the carved↔named merge (docs/plan/03 §5 step 6): carved results whose
+    /// range equals a named entry's extents collapse into the named file.
+    /// Returns the number of carved rows merged.
+    pub fn merge(&mut self) -> Result<u64, SessionError> {
+        self.store.merge_carved_into_entries()
     }
 
     /// The source identity.

@@ -138,13 +138,16 @@ enum Command {
         /// Only Full results.
         #[arg(long = "full-only")]
         full_only: bool,
+        /// Only deleted/orphaned/historical named entries.
+        #[arg(long = "deleted-only")]
+        deleted_only: bool,
         /// Sort: size|date|path|score|offset.
         #[arg(long)]
         sort: Option<String>,
         /// Row limit.
         #[arg(long)]
         limit: Option<usize>,
-        /// Output: table|json|csv|ids.
+        /// Output: table|tree|json|csv|ids.
         #[arg(long, default_value = "table")]
         format: String,
     },
@@ -381,6 +384,7 @@ fn dispatch(cli: &Cli) -> Result<Exit, CmdError> {
             min_score,
             engine,
             full_only,
+            deleted_only,
             sort,
             limit,
             format,
@@ -397,6 +401,7 @@ fn dispatch(cli: &Cli) -> Result<Exit, CmdError> {
                 min_score: *min_score,
                 engine: engine.clone(),
                 full_only: *full_only,
+                deleted_only: *deleted_only,
                 sort: sort.clone(),
                 limit: *limit,
                 format: format.clone(),

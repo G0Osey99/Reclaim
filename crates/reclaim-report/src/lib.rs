@@ -218,6 +218,11 @@ mod tests {
             model: None,
             thumb_offset: None,
             thumb_len: None,
+            path: None,
+            state: None,
+            kind: "file".into(),
+            extents_json: None,
+            merged: false,
         }
     }
 

@@ -19,6 +19,7 @@ pub struct ResultsArgs<'a> {
     pub min_score: Option<u8>,
     pub engine: Option<String>,
     pub full_only: bool,
+    pub deleted_only: bool,
     pub sort: Option<String>,
     pub limit: Option<usize>,
     pub format: String,
@@ -42,6 +43,8 @@ pub fn filter_from(args: &ResultsArgs) -> Result<QueryFilter, CmdError> {
         min_score: args.min_score,
         engine: args.engine.clone(),
         full_only: args.full_only,
+        deleted_only: args.deleted_only,
+        include_merged: false,
         path_glob: args.path_glob.clone(),
         ids: None,
         sort,
@@ -96,19 +99,24 @@ pub fn run(args: &ResultsArgs) -> CmdResult {
                 table.load_preset(comfy_table::presets::NOTHING);
             }
             table.set_header(vec![
-                "PATH", "FORMAT", "SIZE", "VALIDITY", "SCORE", "OFFSET",
+                "PATH", "FORMAT", "SIZE", "STATE", "VALIDITY", "SCORE", "OFFSET",
             ]);
             for r in &records {
                 table.add_row(vec![
                     Cell::new(r.synth_path()),
                     Cell::new(&r.format),
                     Cell::new(format_size(r.len)),
+                    Cell::new(r.state.as_deref().unwrap_or(&r.engine)),
                     Cell::new(&r.validity),
                     Cell::new(r.score),
                     Cell::new(format!("0x{:x}", r.offset)),
                 ]);
             }
             println!("{table}");
+            eprintln!("{} result(s).", records.len());
+        }
+        "tree" => {
+            print_tree(&records);
             eprintln!("{} result(s).", records.len());
         }
         other => {
@@ -125,6 +133,8 @@ fn record_json(r: &CarvedRecord) -> serde_json::Value {
     serde_json::json!({
         "id": r.id,
         "path": r.synth_path(),
+        "engine": r.engine,
+        "state": r.state,
         "family": r.family,
         "format": r.format,
         "ext": r.ext,
@@ -144,4 +154,47 @@ fn csv(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Print recovered results as an indented directory tree (docs/plan/07 §2;
+/// build guide Phase-2 prompt D `results --format tree`). Files sort under their
+/// synthesized/real paths; directories are derived from the path components.
+fn print_tree(records: &[CarvedRecord]) {
+    use std::collections::BTreeMap;
+
+    // Build a nested map from path components.
+    #[derive(Default)]
+    struct Node {
+        dirs: BTreeMap<String, Node>,
+        files: Vec<(String, u64, String, String)>, // (name, len, state/validity, score-note)
+    }
+
+    let mut root = Node::default();
+    for r in records {
+        let path = r.synth_path();
+        let comps: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
+        if comps.is_empty() {
+            continue;
+        }
+        let mut node = &mut root;
+        for dir in &comps[..comps.len() - 1] {
+            node = node.dirs.entry((*dir).to_string()).or_default();
+        }
+        let fname = comps.last().copied().unwrap_or("?").to_string();
+        let tag = r.state.clone().unwrap_or_else(|| r.validity.clone());
+        node.files
+            .push((fname, r.len, tag, format!("score {}", r.score)));
+    }
+
+    fn walk(node: &Node, depth: usize) {
+        let indent = "  ".repeat(depth);
+        for (name, child) in &node.dirs {
+            println!("{indent}{name}/");
+            walk(child, depth + 1);
+        }
+        for (name, len, tag, note) in &node.files {
+            println!("{indent}{name}  ({}, {tag}, {note})", format_size(*len));
+        }
+    }
+    walk(&root, 0);
 }

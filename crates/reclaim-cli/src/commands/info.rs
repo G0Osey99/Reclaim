@@ -19,6 +19,7 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
     let mut lines: Vec<(String, String)> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     let mut probe_json = serde_json::Value::Null;
+    let mut partition_json = serde_json::Value::Null;
 
     match &resolved {
         Resolved::Device {
@@ -70,6 +71,50 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
                 "bytes_per_sec": probe.bytes_per_sec(),
                 "bad_sectors": probe.bad_sectors,
             });
+
+            // Partition scheme (reclaim-part).
+            let map = reclaim_part::scan(&src);
+            lines.push((
+                "partitions".into(),
+                format!(
+                    "{} ({} entr{}, confidence {:.2})",
+                    map.scheme.label(),
+                    map.entries.len(),
+                    if map.entries.len() == 1 { "y" } else { "ies" },
+                    map.confidence
+                ),
+            ));
+            for p in &map.entries {
+                let kind = p.type_guid.clone().unwrap_or_else(|| {
+                    p.type_byte
+                        .map(|b| format!("0x{b:02x}"))
+                        .unwrap_or_default()
+                });
+                lines.push((
+                    format!("  part {}", p.index),
+                    format!(
+                        "{} [{}] @ 0x{:x} ({}){}",
+                        p.type_label,
+                        kind,
+                        p.start,
+                        format_size(p.len),
+                        p.name
+                            .as_deref()
+                            .map(|n| format!(" \"{n}\""))
+                            .unwrap_or_default()
+                    ),
+                ));
+            }
+            for c in &map.containers {
+                lines.push((
+                    "  container".into(),
+                    format!("{} @ 0x{:x} ({})", c.kind, c.offset, c.evidence),
+                ));
+            }
+            for note in &map.notes {
+                warnings.push(format!("partitions: {note}"));
+            }
+            partition_json = serde_json::to_value(&map).unwrap_or(serde_json::Value::Null);
         }
         Err(e) => {
             // Identity already printed; note the probe was skipped.
@@ -79,7 +124,15 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
             warnings.push(format!("read-speed probe skipped: {}", e.message));
             if e.code == Exit::Permission {
                 // Emit and exit with the permission code after printing.
-                emit(json, spec, &resolved, &lines, &warnings, &probe_json)?;
+                emit(
+                    json,
+                    spec,
+                    &resolved,
+                    &lines,
+                    &warnings,
+                    &probe_json,
+                    &partition_json,
+                )?;
                 return Err(e);
             }
         }
@@ -87,10 +140,18 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
 
     lines.push((
         "scan plan".into(),
-        "engines: none yet (carver → Phase 1, metadata → Phase 2/3); read-only".into(),
+        "engines: carve (Phase 1) + exFAT/FAT/NTFS metadata (Phase 2); APFS/HFS+ → Phase 3; read-only".into(),
     ));
 
-    emit(json, spec, &resolved, &lines, &warnings, &probe_json)?;
+    emit(
+        json,
+        spec,
+        &resolved,
+        &lines,
+        &warnings,
+        &probe_json,
+        &partition_json,
+    )?;
     Ok(Exit::Success)
 }
 
@@ -166,6 +227,7 @@ fn emit(
     lines: &[(String, String)],
     warnings: &[String],
     probe: &serde_json::Value,
+    partitions: &serde_json::Value,
 ) -> Result<(), CmdError> {
     if json {
         let mut map = serde_json::Map::new();
@@ -184,6 +246,9 @@ fn emit(
         );
         if !probe.is_null() {
             map.insert("probe".into(), probe.clone());
+        }
+        if !partitions.is_null() {
+            map.insert("partition_map".into(), partitions.clone());
         }
         if let Resolved::Device { disk: Some(d), .. } = resolved {
             if let Ok(v) = serde_json::to_value(d.as_ref()) {
