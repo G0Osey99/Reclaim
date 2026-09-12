@@ -10,7 +10,10 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::path::Path;
 
-/// A stored carved result.
+/// A stored result — either a carved file (engine `carve`) or a named
+/// filesystem entry (engine `exfat`/`fat*`/`ntfs`). The two share one table so
+/// `results`/`recover`/`report` and the carved↔named merge operate uniformly
+/// (docs/plan/03 §2.3 / §5 step 6).
 #[derive(Clone, Debug, Serialize)]
 pub struct CarvedRecord {
     /// Deterministic id.
@@ -19,9 +22,9 @@ pub struct CarvedRecord {
     pub source_id: String,
     /// Producing engine.
     pub engine: String,
-    /// Absolute byte offset.
+    /// Absolute byte offset (first extent, for named entries).
     pub offset: u64,
-    /// Length in bytes.
+    /// Length in bytes (file size).
     pub len: u64,
     /// Refined format id.
     pub format: String,
@@ -45,12 +48,30 @@ pub struct CarvedRecord {
     pub thumb_offset: Option<u64>,
     /// Embedded thumbnail length.
     pub thumb_len: Option<u64>,
+    /// Real filesystem path (named entries); `None` ⇒ synthesize from metadata.
+    pub path: Option<String>,
+    /// Lifecycle state (`live`/`deleted`/`orphaned`/`historical`); `None` for carve.
+    pub state: Option<String>,
+    /// `file` / `dir`.
+    pub kind: String,
+    /// JSON `[[offset,len],…]` of the file's extents; `None` ⇒ single
+    /// contiguous `(offset,len)`.
+    pub extents_json: Option<String>,
+    /// Merged into a named entry (a carved range equal to its extents) — hidden
+    /// from default results.
+    pub merged: bool,
 }
 
 impl CarvedRecord {
-    /// Synthesize the recovery-relative path (docs/plan/05 §6).
+    /// The recovery-relative path: the real filesystem path when present, else
+    /// the synthesized carve path (docs/plan/05 §6).
     #[must_use]
     pub fn synth_path(&self) -> String {
+        if let Some(p) = &self.path {
+            if !p.is_empty() {
+                return p.clone();
+            }
+        }
         let meta = Metadata {
             name: self.name.clone(),
             date: self.date.clone(),
@@ -61,6 +82,55 @@ impl CarvedRecord {
         let subtype = self.format.rsplit('.').next().unwrap_or(&self.format);
         meta.suggested_path(&self.family, subtype, self.offset, &self.ext)
     }
+
+    /// The file's extents as `(offset,len)` pairs: the parsed `extents_json`,
+    /// or a single contiguous `(offset,len)` when absent.
+    #[must_use]
+    pub fn extents(&self) -> Vec<(u64, u64)> {
+        if let Some(j) = &self.extents_json {
+            if let Ok(v) = serde_json::from_str::<Vec<(u64, u64)>>(j) {
+                if !v.is_empty() {
+                    return v;
+                }
+            }
+        }
+        if self.len > 0 {
+            vec![(self.offset, self.len)]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+/// A named filesystem entry to store (input to [`Store::insert_entries`]).
+#[derive(Clone, Debug)]
+pub struct EntryRow {
+    /// Full volume-relative path (recreated on `recover --preserve-paths`).
+    pub path: String,
+    /// Base file name.
+    pub name: String,
+    /// `file` or `dir`.
+    pub kind: &'static str,
+    /// Lifecycle state label (`deleted`/`live`/`orphaned`/`historical`).
+    pub state: String,
+    /// Family inferred from the extension (`image`/`video`/…) for filters.
+    pub family: String,
+    /// Preferred extension.
+    pub ext: String,
+    /// Format id (`<engine>.<ext>` or a signature id).
+    pub format: String,
+    /// First-extent absolute offset (0 for content-less entries).
+    pub offset: u64,
+    /// File size in bytes.
+    pub len: u64,
+    /// Absolute `(offset,len)` extents.
+    pub extents: Vec<(u64, u64)>,
+    /// Recoverability score 0..100.
+    pub score: u8,
+    /// Modification date (`YYYY-MM-DD`), if known.
+    pub date: Option<String>,
+    /// The chain was assumed contiguous (result marked `suspect`).
+    pub contiguous_assumed: bool,
 }
 
 /// Sort key for queries.
@@ -110,6 +180,10 @@ pub struct QueryFilter {
     pub engine: Option<String>,
     /// Only `full` results.
     pub full_only: bool,
+    /// Only deleted/orphaned/historical named entries (`state` set and not live).
+    pub deleted_only: bool,
+    /// Include results merged into a named entry (default: excluded).
+    pub include_merged: bool,
     /// Glob on the synthesized path (applied in Rust).
     pub path_glob: Option<String>,
     /// Explicit id set (recover --ids).
@@ -156,10 +230,14 @@ impl Store {
                 id TEXT PRIMARY KEY, source_id TEXT, engine TEXT,
                 offset INTEGER, len INTEGER, format TEXT, family TEXT, ext TEXT,
                 validity TEXT, score INTEGER, block_aligned INTEGER,
-                name TEXT, date TEXT, model TEXT, thumb_offset INTEGER, thumb_len INTEGER
+                name TEXT, date TEXT, model TEXT, thumb_offset INTEGER, thumb_len INTEGER,
+                path TEXT, state TEXT, kind TEXT DEFAULT 'file',
+                extents TEXT, merged INTEGER DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS carved_family ON carved(family);
             CREATE INDEX IF NOT EXISTS carved_offset ON carved(offset);
+            CREATE INDEX IF NOT EXISTS carved_engine ON carved(engine);
+            CREATE INDEX IF NOT EXISTS carved_state ON carved(state);
             CREATE TABLE IF NOT EXISTS fragments (
                 result_id TEXT, seq INTEGER, offset INTEGER, len INTEGER, confidence INTEGER
             );
@@ -177,6 +255,17 @@ impl Store {
             );
             "#,
         )?;
+        // Migrate Phase-1 sessions that predate the named-entry columns; each
+        // ALTER is ignored if the column already exists.
+        for stmt in [
+            "ALTER TABLE carved ADD COLUMN path TEXT",
+            "ALTER TABLE carved ADD COLUMN state TEXT",
+            "ALTER TABLE carved ADD COLUMN kind TEXT DEFAULT 'file'",
+            "ALTER TABLE carved ADD COLUMN extents TEXT",
+            "ALTER TABLE carved ADD COLUMN merged INTEGER DEFAULT 0",
+        ] {
+            let _ = self.conn.execute(stmt, []);
+        }
         Ok(())
     }
 
@@ -201,8 +290,8 @@ impl Store {
         let mut ids = Vec::with_capacity(batch.len());
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO carved(id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len) \
-                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                "INSERT OR IGNORE INTO carved(id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len,kind,merged) \
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,'file',0)",
             )?;
             for cf in batch {
                 let id = result_id(source_id, engine, cf.offset, cf.len);
@@ -229,6 +318,148 @@ impl Store {
         }
         tx.commit()?;
         Ok(ids)
+    }
+
+    /// Insert a batch of named filesystem entries from a metadata engine. The
+    /// deterministic id is `blake3(source||engine||offset||len)`; `offset`/`len`
+    /// are the first-extent offset and file size so the carved↔named merge can
+    /// compare ranges.
+    pub fn insert_entries(
+        &mut self,
+        source_id: &str,
+        engine: &str,
+        batch: &[EntryRow],
+    ) -> Result<Vec<String>, SessionError> {
+        let tx = self.conn.transaction()?;
+        let mut ids = Vec::with_capacity(batch.len());
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO carved(id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len,path,state,kind,extents,merged) \
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,0)",
+            )?;
+            for e in batch {
+                let id = result_id(source_id, engine, e.offset, e.len);
+                let extents_json =
+                    serde_json::to_string(&e.extents).unwrap_or_else(|_| "[]".into());
+                let validity = if e.contiguous_assumed {
+                    "suspect"
+                } else {
+                    "full"
+                };
+                stmt.execute(params![
+                    id,
+                    source_id,
+                    engine,
+                    e.offset as i64,
+                    e.len as i64,
+                    e.format,
+                    e.family,
+                    e.ext,
+                    validity,
+                    e.score,
+                    0i64,
+                    Some(&e.name),
+                    e.date,
+                    Option::<String>::None,
+                    Option::<i64>::None,
+                    Option::<i64>::None,
+                    Some(&e.path),
+                    Some(&e.state),
+                    e.kind,
+                    Some(extents_json),
+                ])?;
+                ids.push(id);
+            }
+        }
+        tx.commit()?;
+        Ok(ids)
+    }
+
+    /// Merge pass (docs/plan/03 §2.3 / §5 step 6): mark every carved result
+    /// whose `(offset,len)` exactly equals a named entry's extent as `merged`,
+    /// so it collapses into the named file and is hidden from default results.
+    /// Returns the number of carved rows merged.
+    pub fn merge_carved_into_entries(&mut self) -> Result<u64, SessionError> {
+        // Collect every named entry extent (offset,len).
+        let mut ranges: std::collections::HashSet<(i64, i64)> = std::collections::HashSet::new();
+        {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT offset, len, extents FROM carved WHERE engine != 'carve'")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                let off: i64 = r.get(0)?;
+                let len: i64 = r.get(1)?;
+                ranges.insert((off, len));
+                let ex: Option<String> = r.get(2)?;
+                if let Some(j) = ex {
+                    if let Ok(v) = serde_json::from_str::<Vec<(u64, u64)>>(&j) {
+                        for (o, l) in v {
+                            ranges.insert((o as i64, l as i64));
+                        }
+                    }
+                }
+            }
+        }
+        if ranges.is_empty() {
+            return Ok(0);
+        }
+        let tx = self.conn.transaction()?;
+        let mut merged = 0u64;
+        {
+            let mut sel = tx.prepare(
+                "SELECT id, offset, len FROM carved WHERE engine = 'carve' AND merged = 0",
+            )?;
+            let mut upd = tx.prepare("UPDATE carved SET merged = 1 WHERE id = ?1")?;
+            let mut rows = sel.query([])?;
+            let mut to_merge: Vec<String> = Vec::new();
+            while let Some(r) = rows.next()? {
+                let id: String = r.get(0)?;
+                let off: i64 = r.get(1)?;
+                let len: i64 = r.get(2)?;
+                if ranges.contains(&(off, len)) {
+                    to_merge.push(id);
+                }
+            }
+            for id in to_merge {
+                upd.execute(params![id])?;
+                merged += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(merged)
+    }
+
+    /// `(id, offset)` of every carve result (for allocation labeling).
+    pub fn carve_offsets(&self) -> Result<Vec<(String, u64)>, SessionError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, offset FROM carved WHERE engine = 'carve'")?;
+        let mut rows = stmt.query([])?;
+        let mut out = Vec::new();
+        while let Some(r) = rows.next()? {
+            let id: String = r.get(0)?;
+            let off: i64 = r.get(1)?;
+            out.push((id, off as u64));
+        }
+        Ok(out)
+    }
+
+    /// Apply `(id, state, hide)` labels to carve results in one transaction.
+    pub fn apply_carve_labels(
+        &mut self,
+        updates: &[(String, &'static str, bool)],
+    ) -> Result<(), SessionError> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut upd =
+                tx.prepare("UPDATE carved SET state = ?2, merged = CASE WHEN ?3 THEN 1 ELSE merged END WHERE id = ?1")?;
+            for (id, state, hide) in updates {
+                upd.execute(params![id, state, *hide as i64])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Save engine progress (checkpoint).
@@ -323,6 +554,12 @@ impl Store {
         if f.full_only {
             clauses.push("validity='full'".to_string());
         }
+        if f.deleted_only {
+            clauses.push("state IN ('deleted','orphaned','historical')".to_string());
+        }
+        if !f.include_merged {
+            clauses.push("merged=0".to_string());
+        }
         if !f.exts.is_empty() {
             let ph: Vec<String> = f
                 .exts
@@ -381,7 +618,7 @@ impl Store {
     }
 }
 
-const SELECT_CARVED: &str = "SELECT id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len FROM carved";
+const SELECT_CARVED: &str = "SELECT id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len,path,state,kind,extents,merged FROM carved";
 
 fn row_to_record(r: &rusqlite::Row) -> Result<CarvedRecord, SessionError> {
     let off: i64 = r.get(3)?;
@@ -389,6 +626,7 @@ fn row_to_record(r: &rusqlite::Row) -> Result<CarvedRecord, SessionError> {
     let ba: i64 = r.get(10)?;
     let thumb_off: Option<i64> = r.get(14)?;
     let thumb_len: Option<i64> = r.get(15)?;
+    let merged: Option<i64> = r.get(20)?;
     Ok(CarvedRecord {
         id: r.get(0)?,
         source_id: r.get(1)?,
@@ -406,6 +644,13 @@ fn row_to_record(r: &rusqlite::Row) -> Result<CarvedRecord, SessionError> {
         model: r.get(13)?,
         thumb_offset: thumb_off.map(|v| v as u64),
         thumb_len: thumb_len.map(|v| v as u64),
+        path: r.get(16)?,
+        state: r.get(17)?,
+        kind: r
+            .get::<_, Option<String>>(18)?
+            .unwrap_or_else(|| "file".into()),
+        extents_json: r.get(19)?,
+        merged: merged.unwrap_or(0) != 0,
     })
 }
 

@@ -1,0 +1,21 @@
+[package]
+name = "reclaim-part"
+description = "Reclaim partition-scheme parser: GPT (primary+backup, CRC32), MBR/EBR chains, hybrid MBR, APM, and APFS/Core Storage container detection (docs/plan/04 §1)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

@@ -8,13 +8,18 @@ members = [
     "crates/reclaim-platform-macos",
     "crates/reclaim-sigs",
     "crates/reclaim-carve",
+    "crates/reclaim-part",
+    "crates/reclaim-fs-core",
+    "crates/fs-exfat",
+    "crates/fs-fat",
+    "crates/fs-ntfs",
     "crates/reclaim-session",
     "crates/reclaim-report",
     "crates/reclaim-cli",
 ]
 # Fuzz crates are their own workspace (cargo-fuzz manages fuzz/Cargo.toml);
 # exclude them so `cargo build --workspace` on stable ignores the nightly target.
-exclude = ["crates/reclaim-carve/fuzz"]
+exclude = ["crates/reclaim-carve/fuzz", "crates/reclaim-fs-fuzz"]
 
 [workspace.package]
 version = "0.0.0"
@@ -63,6 +68,12 @@ reclaim-sigs = { path = "crates/reclaim-sigs" }
 reclaim-carve = { path = "crates/reclaim-carve" }
 reclaim-session = { path = "crates/reclaim-session" }
 reclaim-report = { path = "crates/reclaim-report" }
+# Phase 2 additions (partition schemes + FS metadata engines).
+reclaim-part = { path = "crates/reclaim-part" }
+reclaim-fs-core = { path = "crates/reclaim-fs-core" }
+fs-exfat = { path = "crates/fs-exfat" }
+fs-fat = { path = "crates/fs-fat" }
+fs-ntfs = { path = "crates/fs-ntfs" }
 
 # Small, safe optimizations for the release CLI; tests stay debuggable.
 [profile.release]

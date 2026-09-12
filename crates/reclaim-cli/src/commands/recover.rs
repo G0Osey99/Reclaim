@@ -245,16 +245,20 @@ fn write_extent(
         .open(out_path)
         .map_err(|e| CmdError::internal(format!("open {}: {e}", out_path.display())))?;
     let mut digest = Digest::new(HashAlgo::Blake3);
-    let mut off = rec.offset;
-    let mut remaining = rec.len;
-    while remaining > 0 {
-        let n = remaining.min(CHUNK as u64) as usize;
-        let buf = reader.read(off, n);
-        f.write_all(&buf)
-            .map_err(|e| CmdError::internal(format!("write {}: {e}", out_path.display())))?;
-        digest.update(&buf);
-        off += n as u64;
-        remaining -= n as u64;
+    // Named filesystem entries may be fragmented (multiple extents); carved
+    // results are a single contiguous (offset,len). `extents()` returns either.
+    for (ext_off, ext_len) in rec.extents() {
+        let mut off = ext_off;
+        let mut remaining = ext_len;
+        while remaining > 0 {
+            let n = remaining.min(CHUNK as u64) as usize;
+            let buf = reader.read(off, n);
+            f.write_all(&buf)
+                .map_err(|e| CmdError::internal(format!("write {}: {e}", out_path.display())))?;
+            digest.update(&buf);
+            off += n as u64;
+            remaining -= n as u64;
+        }
     }
     f.flush().map_err(|e| CmdError::internal(e.to_string()))?;
     Ok(digest.finalize_hex())

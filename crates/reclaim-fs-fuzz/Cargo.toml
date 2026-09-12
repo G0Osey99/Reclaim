@@ -1,0 +1,67 @@
+# cargo-fuzz targets for the Phase-2 partition + filesystem parsers
+# (docs/plan/09 §4). Standalone crate (own [workspace]); excluded from the main
+# workspace so stable `cargo build --workspace` ignores this nightly target.
+[package]
+name = "reclaim-fs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+reclaim-block = { path = "../reclaim-block" }
+reclaim-fs-core = { path = "../reclaim-fs-core" }
+reclaim-part = { path = "../reclaim-part" }
+fs-exfat = { path = "../fs-exfat" }
+fs-fat = { path = "../fs-fat" }
+fs-ntfs = { path = "../fs-ntfs" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "part_scan"
+path = "fuzz_targets/part_scan.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "exfat"
+path = "fuzz_targets/exfat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fat"
+path = "fuzz_targets/fat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ntfs"
+path = "fuzz_targets/ntfs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ntfs_record"
+path = "fuzz_targets/ntfs_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ntfs_usn"
+path = "fuzz_targets/ntfs_usn.rs"
+test = false
+doc = false
+bench = false
