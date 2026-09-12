@@ -3,10 +3,10 @@
 - **Date:** 2026-09-12
 - **Branch:** `dev/v1` (off `main`)
 - **Commit range:** the `p2:` commits on `dev/v1` (`git log 4d2a485..HEAD`).
-- **Toolchain:** rustc/cargo **1.98.1** (pinned). cargo-fuzz is **not installed**
-  on this host (see Gates); the in-tree randomized `fuzz_smoke` tests are the
-  CI-runnable robustness proof, and `crates/reclaim-fs-fuzz` holds the libFuzzer
-  targets for a nightly runner.
+- **Toolchain:** rustc/cargo **1.98.1** (pinned); nightly **1.100** +
+  cargo-fuzz **0.13.2** for fuzzing. The in-tree randomized `fuzz_smoke` tests are
+  the CI-runnable robustness proof; `crates/reclaim-fs-fuzz` holds the libFuzzer
+  targets (run via `scripts/fuzz-fs.sh`, `--fuzz-dir`).
 - **Benchmark competitor:** PhotoRec **7.2** (`brew install testdisk`).
 
 ## Done
@@ -136,14 +136,15 @@
   engines and `reclaim-part` are read-only; only the allow-listed session/report/CLI
   writers remain). The GitHub Actions macos+ubuntu matrix should be re-run on the
   pushed `p2:` commits.
-- **Fuzzing:** cargo-fuzz is **not installed** in this environment, so — as in
-  Phase 1, where the nightly fuzz job was local-only — the six libFuzzer targets
-  (`crates/reclaim-fs-fuzz`: part_scan, exfat, fat, ntfs, ntfs_record, ntfs_usn)
-  are written and ready for `scripts/fuzz-fs.sh` on a nightly runner. The
-  CI-runnable stand-in is the in-tree `fuzz_smoke` tests: **tens of thousands of
-  random + header-seeded inputs per parser, 0 panics** (part ~5k, exFAT/FAT ~6k
-  each, NTFS record 20k + USN/$I30 10k + volume 4k). These run in every
-  `cargo test`.
+- **Fuzzing:** the six libFuzzer targets (`crates/reclaim-fs-fuzz`: part_scan,
+  exfat, fat, ntfs, ntfs_record, ntfs_usn) were built (nightly + cargo-fuzz
+  0.13.2) and each **ran ≥135 s clean — 0 crashes, 0 sanitizer errors, no
+  artifacts** (part_scan 3.4M execs / cov 302; ntfs_record 16.7M; ntfs_usn 2.8M /
+  ft 709; exfat/fat/ntfs several M each). `scripts/fuzz-fs.sh` re-runs them
+  (`--fuzz-dir`). The CI-runnable stand-in is the in-tree `fuzz_smoke` tests:
+  **tens of thousands of random + header-seeded inputs per parser, 0 panics**
+  (part ~5k, exFAT/FAT ~6k each, NTFS record 20k + USN/$I30 10k + volume 4k),
+  which run in every `cargo test`.
 - **Merge gate:** quick+deep on the exFAT image → 101 named results, **0 carved
   duplicates of a named file** (all 48 contiguous carves collapsed into their
   named entries).

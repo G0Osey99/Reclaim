@@ -19,9 +19,12 @@
 # Session scratch (real sessions live under ~/Library/Application Support/Reclaim)
 /sessions/
 
-# Phase 2 fuzz crate build artifacts / corpora (cargo-fuzz, nightly-only)
-crates/reclaim-fs-fuzz/fuzz/
+# Phase 2 fuzz crate build artifacts / corpora (cargo-fuzz, nightly)
 crates/reclaim-fs-fuzz/target/
+crates/reclaim-fs-fuzz/corpus/
+crates/reclaim-fs-fuzz/run-logs/
+crates/reclaim-fs-fuzz/artifacts/
+crates/reclaim-fs-fuzz/Cargo.lock
 
 # PhotoRec run log (bench competitor output; not a source)
 photorec.log
