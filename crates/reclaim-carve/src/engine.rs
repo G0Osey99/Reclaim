@@ -270,9 +270,12 @@ impl CarveEngine {
             Some(i) => i,
             None => return,
         };
-        // Text files start at cluster boundaries; probe at the cluster size but
-        // never finer than 4 KiB, so the pass stays cheap on small sectors.
-        let bs = u64::from(block_size.max(512)).max(4096);
+        // Text files start at block/cluster boundaries. Probe at the inferred
+        // block size (the GCD of validated header offsets), which is the safe
+        // granularity even when the cluster heap is not 4 KiB-aligned in
+        // absolute terms — a coarser stride would miss text starts and shift
+        // the recovered content.
+        let bs = u64::from(block_size.max(512));
         let _ = reader; // previous block is read from the in-memory chunk
         let mut b = base.div_ceil(bs) * bs;
         while b < base + CHUNK as u64 && b < scan_end {

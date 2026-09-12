@@ -757,8 +757,13 @@ dependencies = [
  "comfy-table",
  "libc",
  "reclaim-block",
+ "reclaim-carve",
  "reclaim-platform-macos",
+ "reclaim-report",
+ "reclaim-session",
+ "reclaim-sigs",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

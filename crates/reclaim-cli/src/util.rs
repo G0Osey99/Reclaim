@@ -3,6 +3,42 @@
 use reclaim_block::BlockSource;
 use std::time::{Duration, Instant};
 
+/// Parse a size argument like `4GiB`, `256MiB`, `512KiB`, `1000000`, `4KB`.
+#[must_use]
+pub fn parse_size(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (num, mult): (&str, u64) = if let Some(n) = s.strip_suffix("KiB") {
+        (n, 1024)
+    } else if let Some(n) = s.strip_suffix("MiB") {
+        (n, 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix("GiB") {
+        (n, 1024 * 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix("TiB") {
+        (n, 1024u64 * 1024 * 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix("KB") {
+        (n, 1000)
+    } else if let Some(n) = s.strip_suffix("MB") {
+        (n, 1_000_000)
+    } else if let Some(n) = s.strip_suffix("GB") {
+        (n, 1_000_000_000)
+    } else if let Some(n) = s.strip_suffix('B') {
+        (n, 1)
+    } else {
+        (s, 1)
+    };
+    num.trim()
+        .parse::<u64>()
+        .ok()
+        .map(|v| v.saturating_mul(mult))
+}
+
+/// Parse a byte range like `0-32GiB` into `(start, end)`.
+#[must_use]
+pub fn parse_range(s: &str) -> Option<(u64, u64)> {
+    let (a, b) = s.split_once('-')?;
+    Some((parse_size(a)?, parse_size(b)?))
+}
+
 /// Format a byte count the way macOS storage UIs do (decimal, 1000-based).
 #[must_use]
 pub fn format_size(bytes: u64) -> String {

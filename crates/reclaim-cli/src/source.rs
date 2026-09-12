@@ -67,6 +67,28 @@ impl Resolved {
         )))
     }
 
+    /// Reconstruct a source from a persisted `source_id`
+    /// (`image:{path}:{len}` or `device:{bsd}:{len}`) so a session can reopen
+    /// its source without re-specifying it (docs/plan/07 §4).
+    pub fn from_source_id(id: &str) -> Option<Resolved> {
+        if let Some(rest) = id.strip_prefix("image:") {
+            // Strip the trailing `:{len}`.
+            let path = rest.rsplit_once(':').map(|(p, _)| p).unwrap_or(rest);
+            return Some(Resolved::Image {
+                path: PathBuf::from(path),
+            });
+        }
+        if let Some(rest) = id.strip_prefix("device:") {
+            let bsd = rest.rsplit_once(':').map(|(b, _)| b).unwrap_or(rest);
+            return Some(Resolved::Device {
+                bsd: bsd.to_string(),
+                raw_node: format!("/dev/r{bsd}"),
+                disk: None,
+            });
+        }
+        None
+    }
+
     /// Open the source read-only as a [`BlockSource`], mapping permission
     /// failures to a clear message (exit 2).
     pub fn open(&self) -> Result<Arc<dyn BlockSource>, CmdError> {

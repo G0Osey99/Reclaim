@@ -21,6 +21,7 @@ pub mod elf;
 pub mod flac;
 pub mod gif;
 pub mod gzip;
+pub mod ico;
 pub mod iff;
 pub mod iso;
 pub mod isobmff;
@@ -162,6 +163,7 @@ pub fn dispatch(name: &str, ctx: &Ctx) -> Verdict {
         "jpeg" => jpeg::validate(ctx),
         "png" => png::validate(ctx),
         "gif" => gif::validate(ctx),
+        "ico" => ico::validate(ctx),
         "bmp" => bmp::validate(ctx),
         "tiff" => tiff::validate(ctx),
         "isobmff" => isobmff::validate(ctx),
@@ -191,7 +193,7 @@ pub fn dispatch(name: &str, ctx: &Ctx) -> Verdict {
         "mpegts" => mpegts::validate(ctx),
         "iso" => iso::validate(ctx),
         "wasm" => wasm::validate(ctx),
-        // psd/font/ico/dds/xar/rtf fall back to strategy-based extraction.
+        // psd/font/dds/xar/rtf fall back to strategy-based extraction.
         _ => Verdict::reject(),
     }
 }
@@ -204,6 +206,7 @@ pub fn has_validator(name: &str) -> bool {
         "jpeg"
             | "png"
             | "gif"
+            | "ico"
             | "bmp"
             | "tiff"
             | "isobmff"

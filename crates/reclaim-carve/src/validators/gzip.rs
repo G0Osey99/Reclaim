@@ -18,6 +18,16 @@ pub fn validate(ctx: &Ctx) -> Verdict {
         return Verdict::reject();
     }
     let flg = head.get(3).copied().unwrap_or(0);
+    // FLG reserved bits (5-7) must be zero, and the OS byte must be a known
+    // value — these reject the vast majority of random `1F 8B 08` coincidences
+    // inside other files' data (a false-positive fix, see phase-1.md).
+    if flg & 0xE0 != 0 {
+        return Verdict::reject();
+    }
+    let os = head.get(9).copied().unwrap_or(0xFF);
+    if !(os <= 13 || os == 255) {
+        return Verdict::reject();
+    }
     // MTIME(4)+XFL(1)+OS(1) already in the 10 header bytes. Optional fields:
     let mut pos: u64 = 10;
     if flg & 0x04 != 0 {
