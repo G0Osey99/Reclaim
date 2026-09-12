@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# cargo-ci — makes `cargo ci` work as an external cargo subcommand.
+# Cargo aliases can only chain cargo-native subcommands, but our gate also runs a
+# shell step (check-readonly), so `ci` is shipped as an external subcommand shim.
+# Put scripts/ on PATH (CI does; locally: export PATH="$PWD/scripts:$PATH").
+exec "$(dirname "$0")/ci.sh" "$@"

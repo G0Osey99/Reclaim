@@ -1,0 +1,4 @@
+# Stable-only rustfmt config (no nightly-only options, so `cargo fmt --check`
+# passes with the pinned stable toolchain).
+edition = "2021"
+max_width = 100

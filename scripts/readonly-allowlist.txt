@@ -1,0 +1,12 @@
+# Read-only allow-list (docs/plan/09 §5, build guide Part 3.2).
+# One path prefix per line. A file listed here MAY contain write/mutate patterns;
+# every other tracked .rs file must not. Reviewed on every change.
+#
+# Phase 0 has no byte-writing production code. The single entry below is for the
+# read-only device-geometry ioctls (DKIOCGETBLOCKSIZE / DKIOCGETBLOCKCOUNT /
+# DKIOCGETPHYSICALBLOCKSIZE) — these query size only, they never mutate a device.
+crates/reclaim-block/src/raw_device.rs
+#
+# Added in later phases:
+#   crates/reclaim-block/src/imaging/dest.rs   # Phase 1 — image output (the only source-adjacent writer)
+#   crates/reclaim-session/                     # Phase 1 — SQLite session store + recovered files

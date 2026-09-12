@@ -1,0 +1,20 @@
+# Rust build output
+/target
+**/*.rs.bk
+
+# Generated golden images + synthetic sample corpus + ground-truth sidecars.
+# Images are BUILT, never committed (docs/plan/09 §2, build guide Part 3.4).
+/testdata/build/
+
+# Loose disk images / attach shadow files that may land in the tree
+*.img
+*.dmg.shadow
+
+# Release staging
+/dist/
+
+# macOS cruft
+.DS_Store
+
+# Session scratch (real sessions live under ~/Library/Application Support/Reclaim)
+/sessions/

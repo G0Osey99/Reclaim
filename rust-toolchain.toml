@@ -1,0 +1,7 @@
+# Pinned stable toolchain (build guide Part 3.1). Exact version so `-D warnings`
+# is reproducible across the macOS and Linux CI runners and local dev — a newer
+# clippy could introduce lints that fail the build otherwise.
+[toolchain]
+channel = "1.98.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
