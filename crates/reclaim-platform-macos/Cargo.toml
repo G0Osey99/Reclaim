@@ -1,0 +1,27 @@
+[package]
+name = "reclaim-platform-macos"
+description = "macOS device enumeration for Reclaim: IOKit block-device inventory, mount/FS discovery, APFS topology and SMART summary."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# macOS-only: IOKit/CoreFoundation FFI, plist parsing of diskutil fallback,
+# libc for statfs/getmntinfo.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+io-kit-sys = "0.4"
+plist.workspace = true
+libc.workspace = true
