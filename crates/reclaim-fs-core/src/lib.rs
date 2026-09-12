@@ -237,6 +237,9 @@ pub struct WalkOpts {
     pub include_deleted: bool,
     /// Hard cap on entries emitted (DoS guard on a crafted image).
     pub max_entries: usize,
+    /// Include the sealed APFS System volume (skipped by default — it holds no
+    /// user data; docs/plan/06 §2). Engines that have no such concept ignore it.
+    pub include_system_volume: bool,
 }
 
 impl Default for WalkOpts {
@@ -245,6 +248,7 @@ impl Default for WalkOpts {
             include_live: true,
             include_deleted: true,
             max_entries: 5_000_000,
+            include_system_volume: false,
         }
     }
 }
