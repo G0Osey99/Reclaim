@@ -40,6 +40,12 @@ pub enum BlockError {
     /// A geometry value (sector size) was zero or otherwise invalid.
     #[error("invalid geometry: {0}")]
     Geometry(String),
+
+    /// A recognized image container had malformed or unsupported metadata
+    /// (docs/plan/04 §5). The magic matched but the structure could not be
+    /// parsed into a usable block map.
+    #[error("container format error: {0}")]
+    Container(String),
 }
 
 impl BlockError {

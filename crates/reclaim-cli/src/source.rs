@@ -5,7 +5,7 @@
 //! Adopted volumes, RAID and `mounted:` specs arrive in later phases.
 
 use crate::exit::CmdError;
-use reclaim_block::{BlockSource, ImageFile, RawDevice};
+use reclaim_block::{BlockSource, RawDevice};
 use reclaim_platform_macos::Disk;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -86,6 +86,28 @@ impl Resolved {
                 disk: None,
             });
         }
+        // Image-container source ids are `<fmt>:{path}:{len}` (docs/plan/04 §5);
+        // reopen by path so `open()` re-detects the container on resume.
+        for pfx in [
+            "dmg:",
+            "vmdk:",
+            "vmdk-flat:",
+            "vdi:",
+            "vhd-fixed:",
+            "vhd-dyn:",
+            "vhdx:",
+            "qcow2:",
+            "ewf:",
+            "sparseimage:",
+            "split:",
+        ] {
+            if let Some(rest) = id.strip_prefix(pfx) {
+                let path = rest.rsplit_once(':').map(|(p, _)| p).unwrap_or(rest);
+                return Some(Resolved::Image {
+                    path: PathBuf::from(path),
+                });
+            }
+        }
         None
     }
 
@@ -97,8 +119,10 @@ impl Resolved {
                 Ok(dev) => Ok(Arc::new(dev)),
                 Err(e) => Err(map_open_error(bsd, raw_node, e)),
             },
-            Resolved::Image { path } => match ImageFile::open(path) {
-                Ok(img) => Ok(Arc::new(img)),
+            // Auto-detect image-container formats (DMG/VMDK/VDI/VHD/VHDX/QCOW2/
+            // E01/sparseimage/split) and fall back to a raw image (docs/plan/04 §5).
+            Resolved::Image { path } => match reclaim_block::open_image_auto(path) {
+                Ok(src) => Ok(src),
                 Err(e) => Err(CmdError::not_found(format!(
                     "cannot open image '{}': {e}",
                     path.display()

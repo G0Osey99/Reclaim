@@ -36,6 +36,13 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
         }
         Resolved::Image { path } => {
             lines.push(("source".into(), format!("image {}", path.display())));
+            let container = reclaim_block::detect_container(path);
+            if container != reclaim_block::Container::Raw {
+                lines.push((
+                    "container".into(),
+                    format!("{} (opened as a virtual raw image)", container.label()),
+                ));
+            }
         }
     }
 
