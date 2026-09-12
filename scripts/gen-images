@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""gen-images — build Reclaim's golden test images (docs/plan/09 §2).
+
+For each recipe in testdata/recipes/*.toml this:
+  1. creates a raw image file and attaches it as a CRawDiskImage (no sudo),
+  2. partitions + formats it (MBR/GPT, exFAT/FAT32/APFS/HFS+J) via diskutil,
+  3. populates synthetic, non-copyrighted sample files (JPEG/PNG/MP4/TXT) of
+     varied sizes in a flat or camera (DCIM) layout,
+  4. records ground truth (name, size, sha256, F_LOG2PHYS_EXT extents) BEFORE
+     deletion into a <name>.groundtruth.json sidecar,
+  5. deletes the recipe's chosen files, runs APFS create/delete churn to build
+     checkpoint history, and detaches.
+
+Images and sidecars land in testdata/build/ and are NEVER committed (.gitignore).
+
+Safety: every diskutil/detach call targets ONLY the device id returned by this
+script's own `hdiutil attach` of its own image file (verified against
+`hdiutil info`). No real disk is ever touched. Nothing here writes to a source
+device — the image file IS the destination.
+
+Usage:
+  scripts/gen-images                 # build all recipes
+  scripts/gen-images exfat-camera-delete fat32-usb-delete
+  scripts/gen-images --list
+"""
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import random
+import struct
+import subprocess
+import sys
+import time
+import tomllib
+import zlib
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+RECIPES_DIR = REPO / "testdata" / "recipes"
+BUILD_DIR = REPO / "testdata" / "build"
+
+# <sys/fcntl.h>: F_LOG2PHYS_EXT maps a file range to its physical device offset.
+F_LOG2PHYS_EXT = 65
+# struct log2phys { uint32_t l2p_flags; off_t l2p_contigbytes; off_t l2p_devoffset; }
+# natural alignment => 4 bytes padding after the u32.
+LOG2PHYS_FMT = "<I4xqq"
+LOG2PHYS_SIZE = struct.calcsize(LOG2PHYS_FMT)
+
+
+def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        check=check,
+        capture_output=capture,
+        text=True,
+    )
+
+
+# --------------------------------------------------------------------------
+# Synthetic, non-copyrighted sample generators. Each produces bytes with the
+# real magic/framing for its family so the Phase 1 carver has something to
+# recognise, padded with pseudo-random content to a target size.
+# --------------------------------------------------------------------------
+
+def make_txt(rng: random.Random, size: int) -> bytes:
+    words = (
+        "reclaim recovery sector cluster inode extent carve signature volume "
+        "checkpoint snapshot bitmap catalog journal partition superblock"
+    ).split()
+    out = bytearray()
+    while len(out) < size:
+        line = " ".join(rng.choice(words) for _ in range(rng.randint(6, 14)))
+        out += (line + "\n").encode("ascii")
+    return bytes(out[:size])
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(data))
+        + kind
+        + data
+        + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+    )
+
+
+def make_png(rng: random.Random, size: int) -> bytes:
+    # Small valid grayscale PNG, padded to size with a private ancillary chunk.
+    w = h = 16
+    raw = bytearray()
+    for _ in range(h):
+        raw.append(0)  # filter: none
+        raw += bytes(rng.randrange(256) for _ in range(w))
+    idat = zlib.compress(bytes(raw), 9)
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)  # 8-bit grayscale
+    out = bytearray(b"\x89PNG\r\n\x1a\n")
+    out += _png_chunk(b"IHDR", ihdr)
+    out += _png_chunk(b"IDAT", idat)
+    pad = size - len(out) - 12 - 12  # room for a padding chunk + IEND
+    if pad > 0:
+        out += _png_chunk(b"rCLm", bytes(rng.randrange(256) for _ in range(pad)))
+    out += _png_chunk(b"IEND", b"")
+    return bytes(out)
+
+
+def make_jpeg(rng: random.Random, size: int) -> bytes:
+    # Structurally valid JPEG container: SOI + APP0(JFIF) + COM segments padded
+    # to size + EOI. Not a decodable image, but recognisable framing.
+    out = bytearray(b"\xff\xd8")  # SOI
+    app0 = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"
+    out += b"\xff\xe0" + struct.pack(">H", len(app0) + 2) + app0
+    remaining = size - len(out) - 2  # reserve EOI
+    while remaining > 4:
+        chunk = min(remaining - 4, 65533)
+        payload = bytes(rng.randrange(256) for _ in range(chunk))
+        out += b"\xff\xfe" + struct.pack(">H", len(payload) + 2) + payload  # COM
+        remaining = size - len(out) - 2
+    out += b"\xff\xd9"  # EOI
+    return bytes(out)
+
+
+def _box(kind: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I", len(payload) + 8) + kind + payload
+
+
+def make_mp4(rng: random.Random, size: int) -> bytes:
+    ftyp = _box(b"ftyp", b"isom" + struct.pack(">I", 0x200) + b"isomiso2mp41")
+    # minimal moov/mvhd so an atom walker sees a movie header
+    mvhd = struct.pack(">I", 0) + b"\x00" * 4 + b"\x00" * 4 + struct.pack(">I", 1000)
+    mvhd += struct.pack(">I", 0) + b"\x00" * (80)
+    moov = _box(b"moov", _box(b"mvhd", mvhd))
+    fixed = len(ftyp) + len(moov)
+    mdat_payload = size - fixed - 8
+    if mdat_payload < 0:
+        mdat_payload = 0
+    mdat = _box(b"mdat", bytes(rng.randrange(256) for _ in range(mdat_payload)))
+    return ftyp + mdat + moov
+
+
+MAKERS = {
+    "txt": (make_txt, "txt"),
+    "png": (make_png, "png"),
+    "jpeg": (make_jpeg, "jpg"),
+    "mp4": (make_mp4, "mp4"),
+}
+
+
+# --------------------------------------------------------------------------
+# Ground-truth extents via F_LOG2PHYS_EXT
+# --------------------------------------------------------------------------
+
+def file_extents(path: Path) -> list[dict]:
+    """Physical device extents for a file (volume-relative offsets)."""
+    exts: list[dict] = []
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return exts
+    try:
+        size = os.fstat(fd).st_size
+        off = 0
+        guard = 0
+        while off < size and guard < 100000:
+            guard += 1
+            buf = struct.pack(LOG2PHYS_FMT, 0, size - off, off)
+            try:
+                res = fcntl.fcntl(fd, F_LOG2PHYS_EXT, buf)
+            except OSError:
+                break
+            _flags, contig, devoff = struct.unpack(LOG2PHYS_FMT, res)
+            if contig <= 0:
+                break
+            exts.append({"dev_offset": int(devoff), "length": int(contig)})
+            off += contig
+    finally:
+        os.close(fd)
+    return exts
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# --------------------------------------------------------------------------
+# Attach / partition helpers
+# --------------------------------------------------------------------------
+
+def attach_raw(img: Path) -> str:
+    out = run(
+        [
+            "hdiutil",
+            "attach",
+            "-nomount",
+            "-imagekey",
+            "diskimage-class=CRawDiskImage",
+            str(img),
+        ]
+    ).stdout
+    disk = out.strip().splitlines()[0].split()[0]
+    if not disk.startswith("/dev/disk"):
+        raise RuntimeError(f"unexpected attach output: {out!r}")
+    verify_is_our_image(disk, img)
+    return disk
+
+
+def verify_is_our_image(disk: str, img: Path) -> None:
+    """Refuse to operate unless `disk` is the image we just attached."""
+    info = run(["hdiutil", "info", "-plist"]).stdout
+    import plistlib
+
+    data = plistlib.loads(info.encode())
+    want = str(img.resolve())
+    for image in data.get("images", []):
+        if os.path.realpath(image.get("image-path", "")) == want:
+            for ent in image.get("system-entities", []):
+                if ent.get("dev-entry") == disk:
+                    return
+    raise RuntimeError(
+        f"SAFETY: {disk} is not the image we attached ({img}); refusing to partition it"
+    )
+
+
+def detach(disk: str) -> None:
+    for attempt in range(5):
+        r = run(["hdiutil", "detach", disk], check=False)
+        if r.returncode == 0:
+            return
+        time.sleep(1.0)
+    run(["hdiutil", "detach", "-force", disk], check=False)
+
+
+def partition(disk: str, scheme: str, fs: str, volname: str) -> None:
+    run(["diskutil", "partitionDisk", disk, scheme, fs, volname, "100%"])
+
+
+# --------------------------------------------------------------------------
+# Recipe build
+# --------------------------------------------------------------------------
+
+def build(recipe_path: Path) -> Path:
+    with open(recipe_path, "rb") as f:
+        r = tomllib.load(f)
+
+    name = r["name"]
+    size_mb = int(r["size_mb"])
+    scheme = r["scheme"]
+    fs = r["fs"]
+    volname = r["volname"]
+    layout = r.get("layout", "flat")
+    pop = r.get("populate", {})
+    actions = r.get("actions", {})
+
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    img = BUILD_DIR / f"{name}.img"
+    sidecar = BUILD_DIR / f"{name}.groundtruth.json"
+    if img.exists():
+        img.unlink()
+
+    print(f"[{name}] creating {size_mb} MiB raw image {img.name}")
+    with open(img, "wb") as f:
+        f.truncate(size_mb * 1024 * 1024)
+
+    rng = random.Random(f"reclaim-{name}")
+    disk = None
+    try:
+        disk = attach_raw(img)
+        print(f"[{name}] attached {disk}; partitioning {scheme}/{fs}")
+        partition(disk, scheme, fs, volname)
+        mount = Path("/Volumes") / volname
+        if not mount.is_dir():
+            raise RuntimeError(f"volume did not mount at {mount}")
+
+        # Volume device (first data slice).
+        voldev = volume_device(disk)
+
+        files_meta = build_files(rng, mount, layout, pop)
+
+        # Record ground truth BEFORE deletion.
+        delete_idx = set(actions.get("delete_indices", []))
+        for i, meta in enumerate(files_meta):
+            meta["deleted"] = i in delete_idx
+
+        # Delete chosen files.
+        deleted = 0
+        for i in sorted(delete_idx):
+            if 0 <= i < len(files_meta):
+                target = mount / files_meta[i]["path"]
+                if target.exists():
+                    target.unlink()
+                    deleted += 1
+        print(f"[{name}] deleted {deleted} file(s)")
+
+        # APFS churn: create+delete a small file many times to grow checkpoints.
+        churn = int(actions.get("apfs_churn", 0))
+        if churn > 0:
+            print(f"[{name}] APFS churn: {churn} create/delete transactions")
+            for i in range(churn):
+                p = mount / f".churn_{i}.tmp"
+                with open(p, "wb") as f:
+                    f.write(bytes(rng.randrange(256) for _ in range(4096)))
+                os.sync()
+                p.unlink()
+
+        os.sync()
+        write_sidecar(sidecar, name, img, r, voldev, files_meta, churn)
+        print(f"[{name}] wrote ground truth -> {sidecar.name}")
+    finally:
+        if disk:
+            detach(disk)
+    print(f"[{name}] done: {img}")
+    return img
+
+
+def volume_device(disk: str) -> str | None:
+    try:
+        out = run(["diskutil", "list", "-plist", disk]).stdout
+        import plistlib
+
+        data = plistlib.loads(out.encode())
+        for d in data.get("AllDisksAndPartitions", []):
+            for part in d.get("Partitions", []):
+                if part.get("MountPoint"):
+                    return "/dev/" + part["DeviceIdentifier"]
+            # APFS containers expose volumes under APFSVolumes
+            for vol in d.get("APFSVolumes", []):
+                if vol.get("MountPoint"):
+                    return "/dev/" + vol["DeviceIdentifier"]
+    except Exception:
+        pass
+    return None
+
+
+def build_files(rng: random.Random, mount: Path, layout: str, pop: dict) -> list[dict]:
+    count = int(pop.get("files", 40))
+    families = pop.get("families", ["jpeg", "png", "txt", "mp4"])
+    min_kb = int(pop.get("min_kb", 8))
+    max_kb = int(pop.get("max_kb", 512))
+
+    if layout == "camera":
+        base = mount / "DCIM" / "100RECLM"
+    else:
+        base = mount
+    base.mkdir(parents=True, exist_ok=True)
+
+    metas: list[dict] = []
+    for i in range(count):
+        fam = families[i % len(families)]
+        maker, ext = MAKERS[fam]
+        size = rng.randint(min_kb, max_kb) * 1024
+        data = maker(rng, size)
+        if layout == "camera":
+            fname = f"IMG_{i:04d}.{ext}"
+            rel = f"DCIM/100RECLM/{fname}"
+        else:
+            fname = f"file_{i:03d}.{ext}"
+            rel = fname
+        path = mount / rel
+        with open(path, "wb") as f:
+            f.write(data)
+        os.sync()
+        metas.append(
+            {
+                "path": rel,
+                "family": fam,
+                "size": len(data),
+                "sha256": sha256_file(path),
+                "extents": file_extents(path),
+            }
+        )
+    return metas
+
+
+def write_sidecar(sidecar, name, img, recipe, voldev, files_meta, churn) -> None:
+    doc = {
+        "recipe": name,
+        "image": str(img.relative_to(REPO)),
+        "scheme": recipe["scheme"],
+        "fs": recipe["fs"],
+        "volname": recipe["volname"],
+        "size_mb": recipe["size_mb"],
+        "volume_device_at_build": voldev,
+        "extent_basis": "volume-relative device offsets (F_LOG2PHYS_EXT); "
+        "absolute image offsets resolved once the partition parser lands (Phase 2)",
+        "apfs_churn_transactions": churn,
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "host": os.uname().nodename,
+        "files": files_meta,
+    }
+    with open(sidecar, "w") as f:
+        json.dump(doc, f, indent=2)
+
+
+def main(argv: list[str]) -> int:
+    args = [a for a in argv if not a.startswith("--")]
+    flags = {a for a in argv if a.startswith("--")}
+    recipes = sorted(RECIPES_DIR.glob("*.toml"))
+    if "--list" in flags:
+        for p in recipes:
+            print(p.stem)
+        return 0
+    if args:
+        wanted = set(args)
+        recipes = [p for p in recipes if p.stem in wanted]
+        if not recipes:
+            print(f"no matching recipes for {args}", file=sys.stderr)
+            return 1
+    ok = 0
+    for p in recipes:
+        try:
+            build(p)
+            ok += 1
+        except Exception as e:  # noqa: BLE001 - report and continue
+            print(f"[{p.stem}] FAILED: {e}", file=sys.stderr)
+    print(f"\nbuilt {ok}/{len(recipes)} image(s) into {BUILD_DIR}")
+    return 0 if ok == len(recipes) else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

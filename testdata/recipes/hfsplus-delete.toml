@@ -1,0 +1,18 @@
+# Journaled HFS+ image: flat layout, several files deleted (catalog slack +
+# journal history for Phase 3).
+name = "hfsplus-delete"
+size_mb = 256
+scheme = "GPT"
+fs = "Journaled HFS+"
+volname = "HFSVOL"
+layout = "flat"
+
+[populate]
+files = 40
+families = ["jpeg", "png", "txt", "mp4"]
+min_kb = 8
+max_kb = 512
+
+[actions]
+delete_indices = [1, 3, 6, 9, 12, 15, 18]
+apfs_churn = 0
