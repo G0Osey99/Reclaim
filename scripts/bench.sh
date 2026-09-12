@@ -31,6 +31,10 @@ for img in testdata/build/*.img; do
   name="$(basename "${img%.img}")"
   gt="${img%.img}.groundtruth.json"
   [ -f "$gt" ] || continue
+  # Skip images with no file ground truth (e.g. gpt-deleted-partition, a
+  # partition-recovery test covered by reclaim-part's integration test).
+  nfiles=$(python3 -c "import json;print(len(json.load(open('$gt')).get('files',[])))" 2>/dev/null || echo 0)
+  [ "$nfiles" -gt 0 ] || { echo "== $name == (no file ground truth; skipped)"; continue; }
   d="$WORK/$name"; mkdir -p "$d"
   echo "== $name =="
 

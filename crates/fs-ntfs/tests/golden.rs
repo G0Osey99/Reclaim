@@ -82,3 +82,50 @@ fn walks_deleted_files_from_ntfs_golden_image() {
         "extent should point at the PNG header"
     );
 }
+
+#[test]
+fn recovers_orphan_records_after_quick_format() {
+    let path = Path::new("../../testdata/build/ntfs-quick-format.img");
+    if !path.exists() {
+        eprintln!("skipping: golden image not built ({})", path.display());
+        return;
+    }
+    let src: Arc<dyn BlockSource> = Arc::new(ImageFile::open(path).expect("open image"));
+    let map = reclaim_part::scan(&src);
+    let (start, len) = map
+        .entries
+        .iter()
+        .find(|p| p.type_byte == Some(0x07))
+        .map(|p| (p.start, p.len))
+        .unwrap_or((0, src.len()));
+    let view: Arc<dyn BlockSource> =
+        Arc::new(OffsetView::new(Arc::clone(&src), start, len).unwrap());
+    let probe = fs_ntfs::probe(&view).expect("ntfs probe");
+    let fs = fs_ntfs::open(Arc::clone(&view), probe).expect("open ntfs");
+    let mut sink = VecSink::default();
+    fs.walk(&mut sink, &WalkOpts::default()).expect("walk");
+
+    // A quick format left a near-empty MFT; the old files come back as orphans.
+    let orphans: Vec<_> = sink
+        .entries
+        .iter()
+        .filter(|e| e.state == EntryState::Orphaned && !e.name.starts_with('$'))
+        .collect();
+    assert!(
+        orphans.len() >= 8,
+        "expected the old files as orphan FILE records, got {}",
+        orphans.len()
+    );
+    assert!(orphans.iter().any(|e| e.name == "file_000.jpg"));
+    let e = orphans
+        .iter()
+        .find(|e| e.name == "file_000.jpg")
+        .expect("orphan");
+    let first = e.extents.first().expect("one extent");
+    let mut head = vec![0u8; 3];
+    view.read_at(first.offset, &mut head);
+    assert_eq!(
+        &head, b"\xff\xd8\xff",
+        "orphan extent should point at the JPEG SOI"
+    );
+}

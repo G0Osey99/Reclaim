@@ -1,14 +1,15 @@
 # Phase 2 benchmark — named + content recall (reclaim vs PhotoRec)
 
-_Generated 2026-09-12 16:55:44-0400 · content_recall = exact SHA-256 of recovered bytes; named_recall = deleted file recovered at the right path with matching content (docs/plan/09 §3). PhotoRec is carve-only (no names)._
+_Generated 2026-09-12 17:07:30-0400 · content_recall = exact SHA-256 of recovered bytes; named_recall = deleted file recovered at the right path with matching content (docs/plan/09 §3). PhotoRec is carve-only (no names)._
 
 | image | fs | named_recall | content_recall | photorec content | reclaim prec | time | peak RSS |
 |---|---|---|---|---|---|---|---|
-| apfs-delete-history | APFS | n/a (Phase 3) | 82.5% | 70.0% | 89.2% | 2.10s | 115488 KB |
-| exfat-camera-delete | ExFAT | 100.0% | 100.0% | 58.3% | 47.5% | 0.96s | 104688 KB |
-| fat32-usb-delete | MS-DOS FAT32 | 100.0% | 100.0% | 50.0% | 44.9% | 0.90s | 104800 KB |
-| hfsplus-delete | Journaled HFS+ | n/a (Phase 3) | 100.0% | 85.0% | 100.0% | 1.15s | 104944 KB |
-| ntfs-delete | NTFS | 100.0% | 100.0% | 66.7% | 100.0% | 0.10s | 47936 KB |
+| apfs-delete-history | APFS | n/a (Phase 3) | 82.5% | 70.0% | 89.2% | 2.09s | 105824 KB |
+| exfat-camera-delete | ExFAT | 100.0% | 100.0% | 58.3% | 47.5% | 0.95s | 104784 KB |
+| fat32-usb-delete | MS-DOS FAT32 | 100.0% | 100.0% | 50.0% | 44.9% | 0.91s | 104816 KB |
+| hfsplus-delete | Journaled HFS+ | n/a (Phase 3) | 100.0% | 85.0% | 100.0% | 1.15s | 105088 KB |
+| ntfs-delete | NTFS | 100.0% | 100.0% | 66.7% | 100.0% | 0.10s | 47152 KB |
+| ntfs-quick-format | NTFS | 100.0% | 100.0% | 66.7% | 100.0% | 0.10s | 47664 KB |
 
 ## Per-family content recall (reclaim)
 
@@ -17,6 +18,7 @@ _Generated 2026-09-12 16:55:44-0400 · content_recall = exact SHA-256 of recover
 - **fat32-usb-delete**: jpeg 10/10, mp4 10/10, png 10/10, txt 10/10
 - **hfsplus-delete**: jpeg 10/10, mp4 10/10, png 10/10, txt 10/10
 - **ntfs-delete**: jpeg 8/8, png 8/8, txt 8/8
+- **ntfs-quick-format**: jpeg 4/4, png 4/4, txt 4/4
 
 ## Gates
 

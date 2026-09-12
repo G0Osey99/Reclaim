@@ -319,10 +319,189 @@ def build_ntfs(volume_clusters, files, deleted_set):
     return bytes(vol), metas
 
 
-def build_image(name, files, deleted_set, volume_mb=16, part_lba=2048):
+def build_ntfs_quick_format(volume_clusters, files):
+    """A quick-formatted NTFS volume: a fresh near-empty $MFT, while the OLD file
+    records survive as orphan FILE records in unallocated space (recovered by the
+    engine's orphan scan). Returns (volume_bytes, metas)."""
+    vol = bytearray(volume_clusters * CLUSTER)
+    mft_cluster = 4
+    mft_records = 16
+    mft_clusters = (mft_records * MFT_RECORD + CLUSTER - 1) // CLUSTER
+    bitmap_cluster = mft_cluster + mft_clusters
+    bitmap_clusters = 1
+    # The OLD MFT fragment lives here (orphan records after a quick format).
+    orphan_mft_cluster = bitmap_cluster + bitmap_clusters
+    orphan_records = len(files)
+    orphan_clusters = (orphan_records * MFT_RECORD + CLUSTER - 1) // CLUSTER
+    data_start = orphan_mft_cluster + orphan_clusters
+
+    # Boot sector.
+    boot = bytearray(SECTOR)
+    boot[0:3] = b"\xeb\x52\x90"
+    boot[3:11] = b"NTFS    "
+    struct.pack_into("<H", boot, 11, SECTOR)
+    boot[13] = CLUSTER // SECTOR
+    struct.pack_into("<Q", boot, 0x28, volume_clusters * (CLUSTER // SECTOR))
+    struct.pack_into("<Q", boot, 0x30, mft_cluster)
+    boot[0x40] = (256 - 10) & 0xFF
+    boot[510] = 0x55
+    boot[511] = 0xAA
+    vol[0:SECTOR] = boot
+
+    metas = []
+    next_cluster = data_start
+    for i, (name, fam) in enumerate(files):
+        maker, ext = MAKERS[fam]
+        rng = random.Random(f"ntfsqf-{name}")
+        size = rng.randint(8, 160) * 1024
+        data = maker(rng, size)
+        nclus = (len(data) + CLUSTER - 1) // CLUSTER
+        lcn = next_cluster
+        next_cluster += nclus
+        vol[lcn * CLUSTER: lcn * CLUSTER + len(data)] = data
+        # Orphan FILE record (in-use bit clear) in the old MFT fragment.
+        rec = build_record(16 + i, 0x00, [
+            attr_standard_information(),
+            attr_file_name(name, 5, False, len(data)),
+            attr_nonresident(0x80, [(nclus, lcn)], len(data)),
+        ])
+        off = orphan_mft_cluster * CLUSTER + i * MFT_RECORD
+        vol[off:off + len(rec)] = rec
+        metas.append({
+            "path": name, "family": fam, "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "first_cluster": lcn, "deleted": True,
+        })
+
+    # Fresh MFT: only $MFT / root / $Bitmap (the format's new metadata).
+    records = {}
+    mft_size = mft_records * MFT_RECORD
+    records[0] = build_record(0, 0x01, [
+        attr_standard_information(),
+        attr_file_name("$MFT", 5, False, mft_size),
+        attr_nonresident(0x80, [(mft_clusters, mft_cluster)], mft_size),
+    ])
+    records[5] = build_record(5, 0x03, [
+        attr_standard_information(), attr_file_name(".", 5, True, 0),
+    ])
+    bm_size = bitmap_clusters * CLUSTER
+    records[6] = build_record(6, 0x01, [
+        attr_standard_information(),
+        attr_file_name("$Bitmap", 5, False, bm_size),
+        attr_nonresident(0x80, [(bitmap_clusters, bitmap_cluster)], bm_size),
+    ])
+    for rn, rec in records.items():
+        vol[mft_cluster * CLUSTER + rn * MFT_RECORD:
+            mft_cluster * CLUSTER + rn * MFT_RECORD + len(rec)] = rec
+
+    # $Bitmap: only the fresh metadata is allocated; the old files' clusters read
+    # as free (a quick format zeroes allocation, not data).
+    bm = bytearray(bitmap_clusters * CLUSTER)
+    for c in range(data_start):
+        bm[c // 8] |= 1 << (c % 8)
+    vol[bitmap_cluster * CLUSTER: bitmap_cluster * CLUSTER + len(bm)] = bm
+    return bytes(vol), metas
+
+
+# --- GPT builder (for gpt-deleted-partition) -----------------------------
+
+def _le_guid(fields):
+    d1, d2, d3, rest = fields
+    return struct.pack("<IHH", d1, d2, d3) + rest
+
+# Microsoft Basic Data type GUID EBD0A0A2-B9E5-4433-87C0-68B6B72699C7.
+MSBASIC_GUID = _le_guid((0xEBD0A0A2, 0xB9E5, 0x4433, b"\x87\xC0\x68\xB6\xB7\x26\x99\xC7"))
+
+
+def build_gpt_deleted():
+    """A GPT disk whose PRIMARY header + entry array have been wiped (as a
+    deleted-partition tool would), leaving only the backup header/entries. The
+    reclaim-part parser must fall back to the backup and still find the
+    partition. Returns (image_bytes, expected_partitions)."""
+    ss = SECTOR
+    total_lba = 4096
+    img = bytearray(ss * total_lba)
+    entry_size, num, entry_lba = 128, 128, 2
+
+    # One data partition spanning most of the disk.
+    p_first, p_last = 40, total_lba - 40
+    table = bytearray(num * entry_size)
+    table[0:16] = MSBASIC_GUID
+    struct.pack_into("<Q", table, 32, p_first)
+    struct.pack_into("<Q", table, 40, p_last)
+    # UTF-16LE name "RECLAIMDATA".
+    nm = "RECLAIMDATA".encode("utf-16-le")
+    table[56:56 + len(nm)] = nm
+    entries_crc = zlib.crc32(table) & 0xFFFFFFFF
+
+    def header(my_lba, alt_lba, entries_lba):
+        h = bytearray(92)
+        h[0:8] = b"EFI PART"
+        struct.pack_into("<I", h, 8, 0x00010000)
+        struct.pack_into("<I", h, 12, 92)
+        struct.pack_into("<Q", h, 24, my_lba)
+        struct.pack_into("<Q", h, 32, alt_lba)
+        struct.pack_into("<Q", h, 40, 34)
+        struct.pack_into("<Q", h, 48, total_lba - 34)
+        struct.pack_into("<Q", h, 72, entries_lba)
+        struct.pack_into("<I", h, 80, num)
+        struct.pack_into("<I", h, 84, entry_size)
+        struct.pack_into("<I", h, 88, entries_crc)
+        hcrc = zlib.crc32(bytes(h)) & 0xFFFFFFFF
+        struct.pack_into("<I", h, 16, hcrc)
+        return bytes(h)
+
+    backup_lba = total_lba - 1
+    backup_entries_lba = total_lba - 1 - (num * entry_size + ss - 1) // ss
+    # Primary (about to be wiped) and backup.
+    prim = header(1, backup_lba, entry_lba)
+    back = header(backup_lba, 1, backup_entries_lba)
+
+    # Protective MBR.
+    img[446 + 4] = 0xEE
+    struct.pack_into("<I", img, 446 + 8, 1)
+    struct.pack_into("<I", img, 446 + 12, total_lba - 1)
+    img[510] = 0x55
+    img[511] = 0xAA
+    # Write primary header + entries, backup entries + header.
+    img[ss:ss + len(prim)] = prim
+    img[entry_lba * ss: entry_lba * ss + len(table)] = table
+    img[backup_entries_lba * ss: backup_entries_lba * ss + len(table)] = table
+    img[backup_lba * ss: backup_lba * ss + len(back)] = back
+
+    # "Delete the partition": wipe the PRIMARY GPT header and entry array.
+    for lba in range(1, entry_lba + (num * entry_size + ss - 1) // ss):
+        img[lba * ss:(lba + 1) * ss] = b"\x00" * ss
+
+    return bytes(img), [{"type": "Microsoft Basic Data",
+                         "start": p_first * ss, "len": (p_last - p_first + 1) * ss}]
+
+
+def build_image(name, mode, files=None, deleted_set=None, volume_mb=16, part_lba=2048):
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
+    if mode == "gpt":
+        img, parts = build_gpt_deleted()
+        out = BUILD_DIR / f"{name}.img"
+        with open(out, "wb") as f:
+            f.write(img)
+        sidecar = {
+            "recipe": name, "image": str(out.relative_to(REPO)),
+            "scheme": "GPT", "fs": "none", "synthetic": True,
+            "note": "primary GPT wiped; recovery uses the backup header",
+            "expected_partitions": parts, "files": [],
+            "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+        with open(BUILD_DIR / f"{name}.groundtruth.json", "w") as f:
+            json.dump(sidecar, f, indent=2)
+        print(f"[{name}] wrote {out} ({len(img)} bytes), {len(parts)} expected partition(s)")
+        return out
+
     volume_clusters = (volume_mb * 1024 * 1024) // CLUSTER
-    vol, metas = build_ntfs(volume_clusters, files, deleted_set)
+    if mode == "quick-format":
+        vol, metas = build_ntfs_quick_format(volume_clusters, files)
+    else:
+        vol, metas = build_ntfs(volume_clusters, files, deleted_set)
 
     part_off = part_lba * SECTOR
     total = part_off + len(vol) + SECTOR
@@ -362,14 +541,18 @@ def build_image(name, files, deleted_set, volume_mb=16, part_lba=2048):
     return out
 
 
+_FILESET = [(f"file_{i:03d}.{ext}", fam)
+            for i, (fam, ext) in enumerate(
+                [("jpeg", "jpg"), ("png", "png"), ("txt", "txt")] * 8)]
+
 RECIPES = {
     # ntfs-delete: a flat set of files, several deleted (content intact).
-    "ntfs-delete": dict(
-        files=[(f"file_{i:03d}.{ext}", fam)
-               for i, (fam, ext) in enumerate(
-                   [("jpeg", "jpg"), ("png", "png"), ("txt", "txt")] * 8)],
-        deleted_set={1, 3, 6, 9, 12, 15, 18, 21},
-    ),
+    "ntfs-delete": dict(mode="delete", files=_FILESET,
+                        deleted_set={1, 3, 6, 9, 12, 15, 18, 21}),
+    # ntfs-quick-format: fresh empty MFT; old records survive as orphans.
+    "ntfs-quick-format": dict(mode="quick-format", files=_FILESET[:12]),
+    # gpt-deleted-partition: primary GPT wiped; recovery via the backup header.
+    "gpt-deleted-partition": dict(mode="gpt"),
 }
 
 
@@ -386,7 +569,8 @@ def main(argv):
         if not r:
             print(f"unknown recipe {name}", file=sys.stderr)
             continue
-        build_image(name, r["files"], r["deleted_set"])
+        build_image(name, r["mode"], files=r.get("files"),
+                    deleted_set=r.get("deleted_set"))
         ok += 1
     print(f"built {ok} image(s) into {BUILD_DIR}")
     return 0

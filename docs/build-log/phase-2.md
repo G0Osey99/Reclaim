@@ -81,10 +81,19 @@
   `--deleted-only` and `--engine` filters work; the table shows a `STATE` column.
 
 ### E. Golden images + named_recall scoring (docs/plan/09 §2, §3)
-- `scripts/gen-fs-images` builds a **synthetic, spec-faithful NTFS** image
-  (`ntfs-delete`) — this host has no `mkfs.ntfs`/Docker (see Decisions).
+- `scripts/gen-fs-images` builds **synthetic, spec-faithful** images (this host has
+  no `mkfs.ntfs`/`mkfs.vfat`/Docker — see Decisions):
+  - **ntfs-delete** — flat files, several deleted (content intact).
+  - **ntfs-quick-format** — a fresh near-empty `$MFT`; the old files survive as
+    **orphan `FILE` records** (exercises the orphan scan → named_recall 1.0).
+  - **gpt-deleted-partition** — the primary GPT is wiped; `reclaim-part` recovers
+    the partition from the **backup header** (integration-tested).
 - The existing Phase-0 **exfat-camera-delete** and **fat32-usb-delete** images are
   real exFAT/FAT volumes with MBRs and are the exFAT/FAT `*-delete` targets.
+- The remaining doc-E recipes (**fat16-camera, exfat-partial-overwrite,
+  exfat-reformat-to-fat32**) are `hdiutil`/`newfs_*` multi-step images — buildable
+  on this Mac but the generator wiring for their write/reformat action steps is a
+  Ryker item (Manual items); the engines already parse those layouts.
 - `scripts/bench.sh` + `bench_score.py` extended with **named_recall** (deleted
   file recovered at the right path with matching content, FAT first-char loss
   tolerated) alongside content_recall; `docs/build-log/phase-2/bench.md`:
@@ -161,6 +170,10 @@
    correct names/dates; `reclaim recover ~/s2 ~/Recovered --deleted-only
    --preserve-paths --verify` and open a recovered file.
 3. **CI runners:** re-run the macos + ubuntu matrix on the pushed `p2:` commits.
+4. **Three more doc-E recipes (optional):** wire multi-step `hdiutil`/`newfs_*`
+   action steps for `fat16-camera`, `exfat-partial-overwrite` and
+   `exfat-reformat-to-fat32` (write → delete/overwrite/reformat → detach). No new
+   engine code is needed; the exFAT/FAT engines already handle those layouts.
 
 ## Known gaps (deferred, with phase)
 - **APFS / HFS+ metadata** — Phase 3 (their partitions are detected here but not
