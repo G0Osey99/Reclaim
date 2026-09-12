@@ -20,6 +20,8 @@ reclaim-part = { path = "../reclaim-part" }
 fs-exfat = { path = "../fs-exfat" }
 fs-fat = { path = "../fs-fat" }
 fs-ntfs = { path = "../fs-ntfs" }
+fs-apfs = { path = "../fs-apfs" }
+fs-hfs = { path = "../fs-hfs" }
 
 [profile.release]
 debug = 1
@@ -62,6 +64,34 @@ bench = false
 [[bin]]
 name = "ntfs_usn"
 path = "fuzz_targets/ntfs_usn.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "apfs"
+path = "fuzz_targets/apfs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "apfs_record"
+path = "fuzz_targets/apfs_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hfs"
+path = "fuzz_targets/hfs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hfs_record"
+path = "fuzz_targets/hfs_record.rs"
 test = false
 doc = false
 bench = false
