@@ -45,11 +45,38 @@ PY
 gen_ext ext4 "$B/ext4-delete.img"
 gen_ext ext2 "$B/ext2-delete.img"
 
+# ext ground-truth sidecars (deterministic content above) so scripts/bench.sh can
+# score them. 8 txt + 1 jpg populated; file_000/002 + IMG_0001.jpg are deleted.
+for pair in ext4:ext4-delete ext2:ext2-delete; do
+    fstype="${pair%%:*}"; name="${pair##*:}"
+    [ -f "$B/$name.img" ] || continue
+    python3 - "$fstype" "$B/$name.groundtruth.json" <<'PY'
+import hashlib, json, sys, time, socket
+fstype, out = sys.argv[1], sys.argv[2]
+h = lambda b: hashlib.sha256(b).hexdigest()
+files = []
+for i in range(8):
+    b = (f"golden {i}\n").encode() * (200 + i * 13)
+    files.append({"path": f"file_{i:03d}.txt", "family": "txt", "size": len(b),
+                  "sha256": h(b), "extents": [], "deleted": i in (0, 2)})
+jb = b"\xff\xd8\xff\xe0" + b"J" * 8000 + b"\xff\xd9"
+files.append({"path": "DCIM/IMG_0001.jpg", "family": "jpeg", "size": len(jb),
+              "sha256": h(jb), "extents": [], "deleted": True})
+json.dump({"recipe": out, "fs": fstype, "scheme": "none", "size_mb": 8,
+           "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "host": socket.gethostname(),
+           "note": "deterministic content from gen_ext (mke2fs -d + debugfs rm)",
+           "files": files}, open(out, "w"), indent=1)
+PY
+    echo "wrote $name.groundtruth.json"
+done
+
 # --- ntfs-in-vmdk ----------------------------------------------------------
 if have qemu-img && [ -f "$B/ntfs-delete.img" ]; then
     rm -f "$B/ntfs-in-vmdk.vmdk"
     qemu-img convert -f raw -O vmdk "$B/ntfs-delete.img" "$B/ntfs-in-vmdk.vmdk" && \
         echo "built $B/ntfs-in-vmdk.vmdk (from ntfs-delete.img)"
+    # The container presents the guest image; reuse the guest's ground truth.
+    [ -f "$B/ntfs-delete.groundtruth.json" ] && cp "$B/ntfs-delete.groundtruth.json" "$B/ntfs-in-vmdk.groundtruth.json"
 else
     echo "skip ntfs-in-vmdk: need qemu-img + ntfs-delete.img (scripts/gen-fs-images ntfs-delete)"
 fi
@@ -59,6 +86,7 @@ if have hdiutil && [ -f "$B/apfs-many-deletes.img" ]; then
     rm -f "$B/apfs-in-dmg.dmg"
     hdiutil convert "$B/apfs-many-deletes.img" -format UDZO -o "$B/apfs-in-dmg" >/dev/null && \
         echo "built $B/apfs-in-dmg.dmg (UDZO/zlib, from apfs-many-deletes.img)"
+    [ -f "$B/apfs-many-deletes.groundtruth.json" ] && cp "$B/apfs-many-deletes.groundtruth.json" "$B/apfs-in-dmg.groundtruth.json"
 else
     echo "skip apfs-in-dmg: need hdiutil + apfs-many-deletes.img (scripts/gen-images)"
 fi
@@ -73,6 +101,8 @@ i=d.find(b"EXFAT   "); vol=i-3
 for k in range(vol, vol+512): d[k]=0
 open(f,"wb").write(d); print(f"built {f} (main VBR at {hex(vol)} zeroed)")
 PY
+    # Same guest content as exfat-camera-delete; recovery goes via the backup boot.
+    [ -f "$B/exfat-camera-delete.groundtruth.json" ] && cp "$B/exfat-camera-delete.groundtruth.json" "$B/exfat-zeroed-boot.groundtruth.json"
 else
     echo "skip exfat-zeroed-boot: need exfat-camera-delete.img"
 fi
@@ -87,6 +117,8 @@ i=d.find(b"H+")            # main VH at volume+1024
 for k in range(i, i+512): d[k]=0
 open(f,"wb").write(d); print(f"built {f} (main VH at {hex(i)} zeroed)")
 PY
+    # Same guest content as hfsplus-delete; recovery goes via the alternate VH.
+    [ -f "$B/hfsplus-delete.groundtruth.json" ] && cp "$B/hfsplus-delete.groundtruth.json" "$B/hfs-zeroed-vh.groundtruth.json"
 else
     echo "skip hfs-zeroed-vh: need hfsplus-delete.img"
 fi

@@ -38,3 +38,7 @@ apps/Reclaim/.build/
 apps/Reclaim/*.xcodeproj
 dist/*.app
 dist/*.dmg
+
+# Python bytecode cache
+__pycache__/
+*.pyc

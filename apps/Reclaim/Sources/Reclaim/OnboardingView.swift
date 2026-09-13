@@ -45,6 +45,11 @@ struct OnboardingView: View {
                 }
             }
 
+            // First-run authorization / license notice (docs/plan/11 §5, docs/EULA.md).
+            Text("Recover only data you own or are authorized to access — doing otherwise may be illegal. Reclaim reads only volumes already unlocked by macOS or that you unlock yourself; it never breaks encryption. Provided under the Apache-2.0 license, with no warranty. By continuing you agree to the [license and use notice](https://github.com/G0Osey99/reclaim/blob/main/docs/EULA.md).")
+                .font(.footnote).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             HStack {
                 if helper.isReady {
                     Label("All set", systemImage: "checkmark.seal.fill").foregroundStyle(.green)

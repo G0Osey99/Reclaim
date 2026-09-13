@@ -21,7 +21,7 @@ ROOT="$(pwd)"
 PKG="$ROOT/apps/Reclaim"
 DIST="$ROOT/dist"
 APP="$DIST/Reclaim.app"
-VERSION="0.5.0-beta"
+VERSION="${RECLAIM_VERSION:-1.0.0}"
 BUNDLE_ID="com.reclaim.app"
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }

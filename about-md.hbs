@@ -1,0 +1,32 @@
+# Third-party licenses
+
+Reclaim is licensed under Apache-2.0. It bundles the third-party Rust crates
+listed below. This file is **generated** — run `scripts/gen-third-party.sh`
+(`cargo about generate about-md.hbs`) to regenerate it; do not edit by hand.
+
+Every license here is on the permissive allow-list enforced by `cargo deny`
+(`deny.toml`); no GPL/LGPL code is vendored (see
+[docs/plan/11-safety-legal-licensing.md](docs/plan/11-safety-legal-licensing.md) §2).
+
+{{#each overview}}
+- **{{{name}}}** — {{count}} crate(s)
+{{/each}}
+
+---
+
+{{#each licenses}}
+## {{{name}}} ({{id}})
+
+Used by:
+{{#each used_by}}
+- [{{crate.name}} {{crate.version}}]({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}})
+{{/each}}
+
+<details><summary>License text</summary>
+
+```
+{{{text}}}
+```
+</details>
+
+{{/each}}

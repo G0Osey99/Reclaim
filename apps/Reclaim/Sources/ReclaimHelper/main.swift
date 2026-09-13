@@ -7,7 +7,7 @@
 import Foundation
 import ReclaimHelperProtocol
 
-let helperVersion = "0.5.0-beta"
+let helperVersion = "1.0.0"
 
 /// Only ever act on a real BSD disk node: `disk3`, `disk3s5`, `rdisk3s1s2`.
 func isValidBSDName(_ name: String) -> Bool {

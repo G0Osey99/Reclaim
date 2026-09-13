@@ -6,6 +6,8 @@
 //! session store, and the recover/report/preview destinations.
 
 mod commands;
+#[cfg(feature = "docgen")]
+mod docgen;
 mod exit;
 mod source;
 mod util;
@@ -70,10 +72,10 @@ enum Command {
     Scan {
         /// Source to scan.
         source: String,
-        /// Metadata-only pass (Phase 2 — no engines yet).
+        /// Metadata pass only (list live + deleted entries by name; skip carving).
         #[arg(long)]
         quick: bool,
-        /// Signature-carving pass.
+        /// Signature-carving pass only (skip the metadata pass).
         #[arg(long)]
         deep: bool,
         /// Restrict to families (comma-separated).
@@ -85,7 +87,7 @@ enum Command {
         /// Byte range to scan, e.g. `0-32GiB`.
         #[arg(long)]
         range: Option<String>,
-        /// Only unallocated space (no-op until the FS bitmap lands in Phase 2).
+        /// Restrict carved results to unallocated space (needs the FS free-space bitmap).
         #[arg(long = "unallocated-only")]
         unallocated_only: bool,
         /// Block size: `auto` or a byte count.
@@ -100,7 +102,7 @@ enum Command {
         /// Cap on any single carved file.
         #[arg(long = "max-file-size", default_value = "4GiB")]
         max_file_size: String,
-        /// Worker threads (reserved; scan is I/O-bound in Phase 1).
+        /// Worker threads (reserved; the scan is a single sequential reader).
         #[arg(long)]
         threads: Option<usize>,
         /// Checkpoint interval, e.g. `5s`.
@@ -187,7 +189,7 @@ enum Command {
         /// Hash + record recovered files (manifest always written).
         #[arg(long)]
         verify: bool,
-        /// Do not reassemble fragments (round 2 — no-op).
+        /// Do not reassemble fragments (reserved; round 1 carves contiguous only).
         #[arg(long = "no-fragments")]
         no_fragments: bool,
         /// Allow a same-disk destination (accepts data-loss risk).
@@ -314,6 +316,14 @@ enum SigsCmd {
 }
 
 fn main() -> ExitCode {
+    // Doc generation (feature `docgen` only): RECLAIM_GEN_DOCS=<dir> emits man
+    // pages, shell completions and docs/cli.md from the clap definition, then
+    // exits before any normal parsing/device access.
+    #[cfg(feature = "docgen")]
+    if let Some(dir) = std::env::var_os("RECLAIM_GEN_DOCS") {
+        return docgen::run(std::path::Path::new(&dir));
+    }
+
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {

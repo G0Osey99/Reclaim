@@ -415,7 +415,12 @@ impl FatFs {
                 }
             }
         }
-        // Contiguous assumption (deleted, or a broken live chain).
+        // Contiguous assumption (deleted, or a broken live chain). A file that
+        // fits in a single cluster (`need <= 1`) occupies exactly its first
+        // cluster — contiguity is then a certainty, not an assumption, so it is
+        // `Full`, not `Suspect`. Only multi-cluster files carry the freed-chain
+        // uncertainty (docs/plan/04 §3.4).
+        let assumed = need > 1;
         match self.cluster_offset(first) {
             Some(start) => {
                 let span = need.saturating_mul(self.cluster_size);
@@ -425,10 +430,10 @@ impl FatFs {
                         offset: start,
                         len: size.min(span).min(avail),
                     }],
-                    true,
+                    assumed,
                 )
             }
-            None => (Vec::new(), true),
+            None => (Vec::new(), assumed),
         }
     }
 
