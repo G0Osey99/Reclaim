@@ -31,3 +31,10 @@ photorec.log
 
 # Compiled APFS snapshot helper (source kept; binary is built on demand)
 scripts/apfs-snapshot-helper/snap
+
+# Phase 5 — Swift app build artifacts
+apps/Reclaim/Frameworks/*.a
+apps/Reclaim/.build/
+apps/Reclaim/*.xcodeproj
+dist/*.app
+dist/*.dmg

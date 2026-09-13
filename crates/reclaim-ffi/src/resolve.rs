@@ -24,6 +24,9 @@ pub(crate) enum Resolved {
     Image { path: PathBuf },
     /// An adopted lost-structure volume: proposal `index` (1-based) in a session.
     Volume { session_dir: PathBuf, index: usize },
+    /// A raw file descriptor handed over by the privileged helper (doc 03 §7),
+    /// spelt `fd:<n>` or `fd:<n>:<bsd-label>`.
+    Fd { fd: i32, label: String },
 }
 
 impl Resolved {
@@ -43,6 +46,16 @@ impl Resolved {
                 session_dir: PathBuf::from(dir),
                 index,
             });
+        }
+        if let Some(rest) = spec.strip_prefix("fd:") {
+            let (num, label) = match rest.split_once(':') {
+                Some((n, l)) => (n, l.to_string()),
+                None => (rest, "fd".to_string()),
+            };
+            let fd: i32 = num
+                .parse()
+                .map_err(|_| RcError::usage(format!("bad fd '{num}' in '{spec}'")))?;
+            return Ok(Resolved::Fd { fd, label });
         }
         let stripped = spec.strip_prefix("/dev/").unwrap_or(spec);
         let bsd_candidate = stripped.strip_prefix('r').unwrap_or(stripped);
@@ -129,6 +142,9 @@ impl Resolved {
                 ))),
             },
             Resolved::Volume { session_dir, index } => open_adopted(session_dir, *index),
+            Resolved::Fd { fd, label } => RawDevice::from_fd(*fd, label)
+                .map(|d| Arc::new(d) as Arc<dyn BlockSource>)
+                .map_err(|e| RcError::internal(format!("adopt fd {fd}: {e}"))),
         }
     }
 
@@ -221,10 +237,12 @@ pub(crate) fn dest_on_same_disk(source: &Resolved, dest: &Path) -> bool {
             (Some(a), Some(b)) => a == b,
             _ => false,
         },
-        Resolved::Device { bsd, .. } => match (Some(whole_disk(bsd)), dest_whole_disk(dest)) {
-            (Some(a), Some(b)) => a == b,
-            _ => false,
-        },
+        Resolved::Device { bsd, .. } | Resolved::Fd { label: bsd, .. } => {
+            match (Some(whole_disk(bsd)), dest_whole_disk(dest)) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            }
+        }
         Resolved::Volume { .. } => source
             .underlying()
             .is_some_and(|inner| dest_on_same_disk(&inner, dest)),

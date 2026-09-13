@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- LaunchDaemon for the SMAppService-registered privileged helper
+         (docs/plan/06 §9: SMAppService + LaunchDaemons/*.plist, BundleProgram). -->
+    <key>Label</key>
+    <string>com.reclaim.helper</string>
+    <!-- Path to the helper executable *inside the app bundle*. -->
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/ReclaimHelper</string>
+    <key>MachServices</key>
+    <dict>
+        <key>com.reclaim.helper</key>
+        <true/>
+    </dict>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>com.reclaim.app</string>
+    </array>
+</dict>
+</plist>

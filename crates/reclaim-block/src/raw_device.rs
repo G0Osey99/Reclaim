@@ -81,6 +81,41 @@ impl RawDevice {
         })
     }
 
+    /// Adopt an already-open, read-only file descriptor — the fd the privileged
+    /// helper opens on `/dev/rdiskN` and hands to the unprivileged app over XPC
+    /// (docs/plan/03 §7: "the fd is passed to the core in-process; the helper
+    /// never parses anything"). The fd is `dup(2)`'d so this `RawDevice` owns an
+    /// independent handle and the caller may close its own. `label` names the
+    /// source id (typically the BSD name).
+    pub fn from_fd(fd: RawFd, label: &str) -> Result<Self, BlockError> {
+        // SAFETY: dup(2) returns a fresh owned fd, or -1 on error.
+        let raw: RawFd = unsafe { libc::dup(fd) };
+        if raw < 0 {
+            return Err(BlockError::io("dup", std::io::Error::last_os_error()));
+        }
+        // SAFETY: `raw` is a fresh, owned fd from a successful dup().
+        let owned = unsafe { OwnedFd::from_raw_fd(raw) };
+
+        let (len, sector_size, physical_sector_size) = query_geometry(owned.as_raw_fd())
+            .unwrap_or_else(|| {
+                let len = fstat_len(owned.as_raw_fd()).unwrap_or(0);
+                (len, DEFAULT_SECTOR_SIZE, DEFAULT_SECTOR_SIZE)
+            });
+        if sector_size == 0 {
+            return Err(BlockError::Geometry(
+                "device reported zero sector size".into(),
+            ));
+        }
+        Ok(RawDevice {
+            fd: owned,
+            len,
+            sector_size,
+            physical_sector_size,
+            id: SourceId::for_device(label, len),
+            vanished: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
     /// Classify a read error: `true` if it means the device went away.
     fn note_error(&self, e: &std::io::Error) {
         // ENXIO (6) / ENODEV (19) / EBADF (9): the device node is gone.
@@ -264,6 +299,21 @@ mod tests {
         let r = dev.read_at(1024, &mut buf);
         assert!(r.all_good());
         assert_eq!(&buf[..], &data[1024..3072]);
+    }
+
+    #[test]
+    fn from_fd_reads_and_owns_a_dup() {
+        let data: Vec<u8> = (0..4096u32).map(|i| (i % 97) as u8).collect();
+        let tmp = temp(&data);
+        let f = std::fs::File::open(tmp.path()).unwrap();
+        let dev = RawDevice::from_fd(f.as_raw_fd(), "diskX").unwrap();
+        drop(f); // dev owns an independent dup
+        assert_eq!(dev.len(), 4096);
+        let mut buf = vec![0u8; 1024];
+        let r = dev.read_at(0, &mut buf);
+        assert!(r.all_good());
+        assert_eq!(&buf[..], &data[..1024]);
+        assert_eq!(dev.id().as_str(), "device:diskX:4096");
     }
 
     #[test]
