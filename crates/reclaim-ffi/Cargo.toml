@@ -1,0 +1,46 @@
+[package]
+name = "reclaim-ffi"
+description = "UniFFI Swift bindings over the Reclaim core (docs/plan/08 §5). Exposes list/probe/scan/query/preview/recover/image/volumes/snapshots/report to the SwiftUI app; contains no recovery logic of its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "reclaim_ffi"
+# `lib` for tests + the uniffi-bindgen bin; `staticlib` for the universal lib the
+# Swift package links; `cdylib` so library-mode bindgen can read the metadata.
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[lints]
+workspace = true
+
+[[bin]]
+# In-crate bindgen driver: `cargo run --features cli --bin uniffi-bindgen -- …`.
+name = "uniffi-bindgen"
+required-features = ["cli"]
+
+[features]
+# Pulls in the UniFFI bindgen (only needed to generate the Swift sources).
+cli = ["uniffi/cli"]
+
+[dependencies]
+reclaim-block.workspace = true
+reclaim-platform-macos.workspace = true
+reclaim-carve.workspace = true
+reclaim-part.workspace = true
+reclaim-session.workspace = true
+reclaim-report.workspace = true
+reclaim-structs.workspace = true
+reclaim-preview.workspace = true
+fs-apfs.workspace = true
+uniffi = { version = "0.29" }
+libc.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

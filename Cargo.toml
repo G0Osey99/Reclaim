@@ -18,6 +18,8 @@ members = [
     "crates/fs-ext",
     "crates/fs-iso",
     "crates/reclaim-structs",
+    "crates/reclaim-preview",
+    "crates/reclaim-ffi",
     "crates/reclaim-session",
     "crates/reclaim-report",
     "crates/reclaim-cli",
@@ -92,7 +94,11 @@ fs-iso = { path = "crates/fs-iso" }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] } # zlib/deflate: UDZO, E01 (MIT/Apache-2.0)
 bzip2-rs = "0.1"                                      # UDBZ decode-only (MIT/Apache-2.0)
 lzma-rs = "0.3"                                       # ULMO / LZMA + XZ (MIT)
-lzfse_rust = "0.2"                                    # ULFO / LZFSE (MIT/Apache-2.0)
+lzfse_rust = "0.2"                                   # ULFO / LZFSE (MIT/Apache-2.0)
+# Phase 5 (GUI previews). Pure-Rust raster decoders only (no C libs):
+# jpeg/png/gif/bmp/webp; all MIT/Apache-2.0/BSD-3 (deny.toml allow-list).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"] }
+reclaim-preview = { path = "crates/reclaim-preview" }
 
 # Small, safe optimizations for the release CLI; tests stay debuggable.
 [profile.release]

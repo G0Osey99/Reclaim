@@ -208,6 +208,9 @@ pub struct QueryFilter {
     pub sort: Option<Sort>,
     /// Row limit.
     pub limit: Option<usize>,
+    /// Rows to skip before collecting (GUI paging; applied after `path_glob`).
+    /// The CLI never sets this.
+    pub offset: Option<usize>,
 }
 
 /// The session's SQLite store.
@@ -582,69 +585,16 @@ impl Store {
         }
     }
 
-    /// Query carved results with a filter.
+    /// Query carved results with a filter (honoring `sort`, `path_glob`,
+    /// `offset` and `limit`).
     pub fn query(&self, f: &QueryFilter) -> Result<Vec<CarvedRecord>, SessionError> {
+        // Empty explicit-id set matches nothing.
+        if f.ids.as_ref().is_some_and(|v| v.is_empty()) {
+            return Ok(Vec::new());
+        }
+        let (where_sql, args) = build_where(f);
         let mut sql = String::from(SELECT_CARVED);
-        let mut clauses: Vec<String> = Vec::new();
-        let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-        if let Some(fam) = &f.family {
-            clauses.push(format!("family=?{}", args.len() + 1));
-            args.push(Box::new(fam.clone()));
-        }
-        if let Some(ms) = f.min_size {
-            clauses.push(format!("len>=?{}", args.len() + 1));
-            args.push(Box::new(ms as i64));
-        }
-        if let Some(sc) = f.min_score {
-            clauses.push(format!("score>=?{}", args.len() + 1));
-            args.push(Box::new(sc as i64));
-        }
-        if let Some(eng) = &f.engine {
-            clauses.push(format!("engine=?{}", args.len() + 1));
-            args.push(Box::new(eng.clone()));
-        }
-        if let Some(after) = &f.after {
-            clauses.push(format!("date>=?{}", args.len() + 1));
-            args.push(Box::new(after.clone()));
-        }
-        if f.full_only {
-            clauses.push("validity='full'".to_string());
-        }
-        if f.deleted_only {
-            clauses.push("state IN ('deleted','orphaned','historical')".to_string());
-        }
-        if !f.include_merged {
-            clauses.push("merged=0".to_string());
-        }
-        if !f.exts.is_empty() {
-            let ph: Vec<String> = f
-                .exts
-                .iter()
-                .map(|e| {
-                    args.push(Box::new(e.clone()));
-                    format!("?{}", args.len())
-                })
-                .collect();
-            clauses.push(format!("ext IN ({})", ph.join(",")));
-        }
-        if let Some(ids) = &f.ids {
-            if ids.is_empty() {
-                return Ok(Vec::new());
-            }
-            let ph: Vec<String> = ids
-                .iter()
-                .map(|i| {
-                    args.push(Box::new(i.clone()));
-                    format!("?{}", args.len())
-                })
-                .collect();
-            clauses.push(format!("id IN ({})", ph.join(",")));
-        }
-        if !clauses.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&clauses.join(" AND "));
-        }
+        sql.push_str(&where_sql);
         sql.push_str(match f.sort.unwrap_or(Sort::Offset) {
             Sort::Offset => " ORDER BY offset ASC",
             Sort::Size => " ORDER BY len DESC",
@@ -657,12 +607,18 @@ impl Store {
         let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
         let mut rows = stmt.query(arg_refs.as_slice())?;
         let mut out = Vec::new();
+        let mut skipped = 0usize;
+        let offset = f.offset.unwrap_or(0);
         while let Some(r) = rows.next()? {
             let rec = row_to_record(r)?;
             if let Some(glob) = &f.path_glob {
                 if !glob_match(glob, &rec.synth_path()) {
                     continue;
                 }
+            }
+            if skipped < offset {
+                skipped += 1;
+                continue;
             }
             out.push(rec);
             if let Some(lim) = f.limit {
@@ -673,6 +629,132 @@ impl Store {
         }
         Ok(out)
     }
+
+    /// Count rows matching a filter, ignoring `offset`/`limit` (GUI page totals
+    /// and filter-rail counts). When `path_glob` is set, the glob is applied in
+    /// Rust so this streams ids rather than a plain `COUNT(*)`.
+    pub fn count_matching(&self, f: &QueryFilter) -> Result<u64, SessionError> {
+        if f.ids.as_ref().is_some_and(|v| v.is_empty()) {
+            return Ok(0);
+        }
+        let (where_sql, args) = build_where(f);
+        let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
+        if f.path_glob.is_none() {
+            let sql = format!("SELECT COUNT(*) FROM carved{where_sql}");
+            let n: i64 = self
+                .conn
+                .query_row(&sql, arg_refs.as_slice(), |r| r.get(0))?;
+            return Ok(n as u64);
+        }
+        // Glob: stream synth paths (id + the naming columns) and count matches.
+        let glob = f.path_glob.as_deref().unwrap_or("*");
+        let sql = format!("{SELECT_CARVED}{where_sql}");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut rows = stmt.query(arg_refs.as_slice())?;
+        let mut n = 0u64;
+        while let Some(r) = rows.next()? {
+            let rec = row_to_record(r)?;
+            if glob_match(glob, &rec.synth_path()) {
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// `(family, count)` for the results in scope (default: non-merged rows),
+    /// for the GUI filter rail. `deleted_only` restricts to deleted/orphaned/
+    /// historical named entries.
+    pub fn family_counts(
+        &self,
+        deleted_only: bool,
+        include_merged: bool,
+    ) -> Result<Vec<(String, u64)>, SessionError> {
+        let mut sql = String::from("SELECT family, COUNT(*) FROM carved");
+        let mut clauses: Vec<&str> = Vec::new();
+        if !include_merged {
+            clauses.push("merged=0");
+        }
+        if deleted_only {
+            clauses.push("state IN ('deleted','orphaned','historical')");
+        }
+        if !clauses.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&clauses.join(" AND "));
+        }
+        sql.push_str(" GROUP BY family ORDER BY family");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+}
+
+/// Build the shared `WHERE …` clause (without glob, offset, limit) and its bound
+/// arguments for [`Store::query`] and [`Store::count_matching`].
+fn build_where(f: &QueryFilter) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    if let Some(fam) = &f.family {
+        clauses.push(format!("family=?{}", args.len() + 1));
+        args.push(Box::new(fam.clone()));
+    }
+    if let Some(ms) = f.min_size {
+        clauses.push(format!("len>=?{}", args.len() + 1));
+        args.push(Box::new(ms as i64));
+    }
+    if let Some(sc) = f.min_score {
+        clauses.push(format!("score>=?{}", args.len() + 1));
+        args.push(Box::new(sc as i64));
+    }
+    if let Some(eng) = &f.engine {
+        clauses.push(format!("engine=?{}", args.len() + 1));
+        args.push(Box::new(eng.clone()));
+    }
+    if let Some(after) = &f.after {
+        clauses.push(format!("date>=?{}", args.len() + 1));
+        args.push(Box::new(after.clone()));
+    }
+    if f.full_only {
+        clauses.push("validity='full'".to_string());
+    }
+    if f.deleted_only {
+        clauses.push("state IN ('deleted','orphaned','historical')".to_string());
+    }
+    if !f.include_merged {
+        clauses.push("merged=0".to_string());
+    }
+    if !f.exts.is_empty() {
+        let ph: Vec<String> = f
+            .exts
+            .iter()
+            .map(|e| {
+                args.push(Box::new(e.clone()));
+                format!("?{}", args.len())
+            })
+            .collect();
+        clauses.push(format!("ext IN ({})", ph.join(",")));
+    }
+    if let Some(ids) = &f.ids {
+        let ph: Vec<String> = ids
+            .iter()
+            .map(|i| {
+                args.push(Box::new(i.clone()));
+                format!("?{}", args.len())
+            })
+            .collect();
+        clauses.push(format!("id IN ({})", ph.join(",")));
+    }
+    let where_sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    (where_sql, args)
 }
 
 const SELECT_CARVED: &str = "SELECT id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len,path,state,kind,extents,merged FROM carved";

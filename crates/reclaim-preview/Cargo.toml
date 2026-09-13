@@ -1,0 +1,19 @@
+[package]
+name = "reclaim-preview"
+description = "Reclaim in-process preview/thumbnail generation from raw file bytes (no disk writes): raster decode via `image`, text and hex fallbacks (docs/plan/08 §2.3, FR-RES-2)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
