@@ -81,11 +81,44 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
                     probe.bad_sectors
                 ),
             ));
+            // Health verdict: SMART (whole physical disks) + this read probe
+            // (docs/plan/06 §7). Images/partitions have no SMART; the probe still
+            // gives a read-error / latency signal.
+            let smart = match &resolved {
+                Resolved::Device { disk: Some(d), .. } if d.whole && !d.is_apfs_container() => {
+                    d.smart
+                }
+                _ => reclaim_platform_macos::SmartSummary::NotSupported,
+            };
+            const SLOW_BPS: f64 = 5.0 * 1024.0 * 1024.0; // < 5 MB/s ⇒ marginal
+            let verdict = reclaim_platform_macos::assess_health(
+                smart,
+                probe.bad_sectors,
+                Some(probe.bytes_per_sec()),
+                SLOW_BPS,
+            );
+            lines.push((
+                "health".into(),
+                format!(
+                    "{} (SMART {}, {} bad sector(s) in probe)",
+                    verdict.label(),
+                    smart.label(),
+                    probe.bad_sectors
+                ),
+            ));
+            if verdict.image_first() {
+                warnings.push(format!(
+                    "drive health is {} — image first, then scan the image: \
+                     `reclaim image {spec} out.img [--retries 5 --reverse-pass]` (docs/plan/06 §7).",
+                    verdict.label()
+                ));
+            }
             probe_json = serde_json::json!({
                 "bytes_read": probe.bytes_read,
                 "elapsed_secs": probe.elapsed.as_secs_f64(),
                 "bytes_per_sec": probe.bytes_per_sec(),
                 "bad_sectors": probe.bad_sectors,
+                "health": verdict,
             });
 
             // Partition scheme (reclaim-part).
@@ -156,7 +189,9 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
 
     lines.push((
         "scan plan".into(),
-        "engines: carve (Phase 1) + exFAT/FAT/NTFS metadata (Phase 2); APFS/HFS+ → Phase 3; read-only".into(),
+        "engines: APFS/HFS+/NTFS/exFAT/FAT/ext/ISO metadata + carve + lost-structure; \
+         image containers auto-detected; read-only"
+            .into(),
     ));
 
     emit(
@@ -210,10 +245,6 @@ fn describe_device(d: &Disk, lines: &mut Vec<(String, String)>, warnings: &mut V
             warnings.push("FileVault is enabled; recovery reads the OS-unlocked volume device (docs/plan/06 §5).".into());
         }
     }
-    if d.whole && !d.is_apfs_container() {
-        lines.push(("health".into(), d.smart.label().to_string()));
-    }
-
     // Boot-disk / TRIM warnings (docs/plan/06 §2, §3).
     if is_boot_disk(&d.whole_disk) {
         warnings.push("this is (part of) the boot disk — stop using this Mac and recover to an external drive (docs/plan/06 §2).".into());

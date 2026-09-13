@@ -44,10 +44,13 @@ fn build_image() -> tempfile::NamedTempFile {
 }
 
 fn source_info(src: &Arc<dyn BlockSource>) -> SourceInfo {
+    let (first_mib_hash, last_mib_hash) = reclaim_session::source_hashes(src);
     SourceInfo {
         source_id: src.id().as_str().to_string(),
         size: src.len(),
         sector_size: src.sector_size(),
+        first_mib_hash,
+        last_mib_hash,
     }
 }
 

@@ -14,10 +14,13 @@ use std::sync::Arc;
 pub fn open_source(spec: &str) -> Result<(Resolved, Arc<dyn BlockSource>, SourceInfo), CmdError> {
     let resolved = Resolved::parse(spec)?;
     let src = resolved.open()?;
+    let (first_mib_hash, last_mib_hash) = reclaim_session::source_hashes(&src);
     let info = SourceInfo {
         source_id: src.id().as_str().to_string(),
         size: src.len(),
         sector_size: src.sector_size(),
+        first_mib_hash,
+        last_mib_hash,
     };
     Ok((resolved, src, info))
 }

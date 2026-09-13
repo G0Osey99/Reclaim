@@ -28,6 +28,8 @@ pub struct RawDevice {
     sector_size: u32,
     physical_sector_size: u32,
     id: SourceId,
+    /// Set once a read sees the device disappear (`ENXIO`/`ENODEV`/`EBADF`).
+    vanished: std::sync::atomic::AtomicBool,
 }
 
 impl RawDevice {
@@ -75,7 +77,17 @@ impl RawDevice {
             sector_size,
             physical_sector_size,
             id,
+            vanished: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    /// Classify a read error: `true` if it means the device went away.
+    fn note_error(&self, e: &std::io::Error) {
+        // ENXIO (6) / ENODEV (19) / EBADF (9): the device node is gone.
+        if matches!(e.raw_os_error(), Some(6) | Some(19) | Some(9)) {
+            self.vanished
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -123,7 +135,10 @@ impl BlockSource for RawDevice {
                 Ok(0) => break, // short read; remainder handled as bad below
                 Ok(n) => done += n,
                 Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => {
+                Err(ref e) => {
+                    // A device-gone error (ENXIO/ENODEV/EBADF) latches `vanished`
+                    // so the scan can checkpoint and exit resumably.
+                    self.note_error(e);
                     // Isolate the offending sector, mark it bad, and continue.
                     let sec = done / ss_usize;
                     let sec_start = sec * ss_usize;
@@ -158,6 +173,10 @@ impl BlockSource for RawDevice {
 
     fn id(&self) -> SourceId {
         self.id.clone()
+    }
+
+    fn vanished(&self) -> bool {
+        self.vanished.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

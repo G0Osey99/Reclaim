@@ -182,6 +182,14 @@ pub trait BlockSource: Send + Sync {
 
     /// Stable identity across sessions.
     fn id(&self) -> SourceId;
+
+    /// True once a read has observed the backing device disappear (e.g. a
+    /// hot-unplugged USB disk — `ENXIO`/`ENODEV`). Scans poll this to checkpoint
+    /// and exit resumably instead of grinding through zero-filled reads
+    /// (docs/plan/07 §4). Non-device sources never vanish.
+    fn vanished(&self) -> bool {
+        false
+    }
 }
 
 /// Blanket impl so `Arc<dyn BlockSource>`, `Box<dyn BlockSource>`, `&T` etc.
@@ -201,6 +209,9 @@ impl<T: BlockSource + ?Sized> BlockSource for std::sync::Arc<T> {
     }
     fn id(&self) -> SourceId {
         (**self).id()
+    }
+    fn vanished(&self) -> bool {
+        (**self).vanished()
     }
 }
 

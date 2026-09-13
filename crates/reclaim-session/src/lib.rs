@@ -46,7 +46,7 @@ pub enum SessionError {
     Other(String),
 }
 
-/// Persisted source identity (`source.json`).
+/// Persisted source identity (`source.json`, docs/plan/07 §4).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceInfo {
     /// Stable source id.
@@ -55,6 +55,45 @@ pub struct SourceInfo {
     pub size: u64,
     /// Logical sector size.
     pub sector_size: u32,
+    /// blake3 of the first 1 MiB — re-identifies the source on `--resume` even
+    /// if the device got a different BSD number after a re-plug.
+    #[serde(default)]
+    pub first_mib_hash: Option<String>,
+    /// blake3 of the last 1 MiB.
+    #[serde(default)]
+    pub last_mib_hash: Option<String>,
+}
+
+/// blake3 of the first and last 1 MiB of a source, for `--resume`
+/// re-identification (docs/plan/07 §4). A hash is `None` if that region could
+/// not be read cleanly.
+#[must_use]
+pub fn source_hashes(
+    src: &std::sync::Arc<dyn reclaim_block::BlockSource>,
+) -> (Option<String>, Option<String>) {
+    const MIB: u64 = 1024 * 1024;
+    let len = src.len();
+    let hash_at = |off: u64, n: u64| -> Option<String> {
+        if n == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; n as usize];
+        let r = src.read_at(off, &mut buf);
+        if r.any_bad() {
+            return None;
+        }
+        Some(blake3::hash(&buf).to_hex().to_string())
+    };
+    let first = hash_at(0, MIB.min(len));
+    let last = if len > MIB {
+        // Align the last-MiB read down to the sector size.
+        let ss = u64::from(src.sector_size().max(1));
+        let start = (len - MIB) / ss * ss;
+        hash_at(start, len - start)
+    } else {
+        first.clone()
+    };
+    (first, last)
 }
 
 /// Persisted scan plan (`plan.json`).
@@ -103,6 +142,26 @@ impl Session {
                 "session was created for {}, not {} (use --force-source)",
                 source.source_id, expect.source_id
             )));
+        }
+        // Content re-identification (docs/plan/07 §4): if both the session and
+        // the current source carry first/last-MiB hashes, they must match — this
+        // catches a device that took a different BSD number but is a different
+        // disk, and confirms a re-plugged one is the same.
+        if !force {
+            if let (Some(a), Some(b)) = (&source.first_mib_hash, &expect.first_mib_hash) {
+                if a != b {
+                    return Err(SessionError::SourceMismatch(format!(
+                        "source content changed (first-MiB hash {a} != {b}); use --force-source"
+                    )));
+                }
+            }
+            if let (Some(a), Some(b)) = (&source.last_mib_hash, &expect.last_mib_hash) {
+                if a != b {
+                    return Err(SessionError::SourceMismatch(format!(
+                        "source content changed (last-MiB hash {a} != {b}); use --force-source"
+                    )));
+                }
+            }
         }
         Ok(Session {
             dir: dir.to_path_buf(),

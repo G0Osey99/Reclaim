@@ -44,6 +44,67 @@ impl SmartSummary {
     }
 }
 
+/// Overall drive-health verdict (docs/plan/06 §7): combines the IOKit-backed
+/// SMART status (via `diskutil`, where the bus exposes it) with a read-error /
+/// latency probe (the fallback for USB bridges that pass no SMART).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthVerdict {
+    /// Healthy: SMART verified (or absent) and the probe was clean and fast.
+    Good,
+    /// Marginal: unusually slow, or SMART not verifiable — imaging advised.
+    Warn,
+    /// Failing: SMART failing or the probe hit read errors — **image first**.
+    Bad,
+    /// Not enough signal to judge.
+    Unknown,
+}
+
+impl HealthVerdict {
+    /// Short label.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            HealthVerdict::Good => "good",
+            HealthVerdict::Warn => "marginal",
+            HealthVerdict::Bad => "FAILING",
+            HealthVerdict::Unknown => "unknown",
+        }
+    }
+
+    /// True when the planner should steer the user to image the source first
+    /// before scanning (a failing/marginal drive should not be hammered).
+    #[must_use]
+    pub fn image_first(self) -> bool {
+        matches!(self, HealthVerdict::Warn | HealthVerdict::Bad)
+    }
+}
+
+/// Combine a SMART status with read-probe results into a [`HealthVerdict`].
+///
+/// * any read error in the probe, or SMART `Failing` ⇒ `Bad` (image first);
+/// * a successful probe slower than `slow_threshold_bps` ⇒ `Warn`;
+/// * SMART `Verified`/absent with a clean, fast probe ⇒ `Good`.
+#[must_use]
+pub fn assess_health(
+    smart: SmartSummary,
+    read_errors: u64,
+    bytes_per_sec: Option<f64>,
+    slow_threshold_bps: f64,
+) -> HealthVerdict {
+    if smart == SmartSummary::Failing || read_errors > 0 {
+        return HealthVerdict::Bad;
+    }
+    match bytes_per_sec {
+        Some(bps) if bps > 0.0 && bps < slow_threshold_bps => HealthVerdict::Warn,
+        Some(_) => HealthVerdict::Good,
+        None => match smart {
+            SmartSummary::Verified => HealthVerdict::Good,
+            _ => HealthVerdict::Unknown,
+        },
+    }
+}
+
 /// APFS membership facts for a disk (container or volume).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ApfsMembership {

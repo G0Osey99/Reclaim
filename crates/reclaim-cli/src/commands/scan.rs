@@ -36,7 +36,18 @@ pub fn run(args: &ScanArgs) -> CmdResult {
     if let Some(root) = args.source.strip_prefix("mounted:") {
         return run_mounted(root, args);
     }
-    let (_resolved, src, info) = open_source(args.source)?;
+    let (resolved, src, info) = open_source(args.source)?;
+
+    // Health nudge: a whole physical disk whose SMART is failing should be
+    // imaged before scanning (docs/plan/06 §7).
+    if let crate::source::Resolved::Device { disk: Some(d), .. } = &resolved {
+        if d.whole && d.smart == reclaim_platform_macos::SmartSummary::Failing && !args.quiet {
+            eprintln!(
+                "warning: {} SMART reports FAILING — image it first (`reclaim image {} out.img`), then scan the image (docs/plan/06 §7).",
+                args.source, args.source
+            );
+        }
+    }
 
     // Default (no pass flag) runs quick then deep; a flag selects just that pass.
     let run_quick = args.quick || !args.deep;
@@ -128,11 +139,20 @@ pub fn run(args: &ScanArgs) -> CmdResult {
         }
 
         if report.interrupted {
-            eprintln!(
-                "interrupted — resume with `reclaim scan {} --session {} --resume`.",
-                args.source,
-                dir.display()
-            );
+            if report.vanished {
+                eprintln!(
+                    "source device disappeared mid-scan — reconnect it and resume with \
+                     `reclaim scan {} --session {} --resume` (docs/plan/07 §4).",
+                    args.source,
+                    dir.display()
+                );
+            } else {
+                eprintln!(
+                    "interrupted — resume with `reclaim scan {} --session {} --resume`.",
+                    args.source,
+                    dir.display()
+                );
+            }
             return Ok(Exit::Interrupted);
         }
 
@@ -195,6 +215,8 @@ fn run_mounted(root: &str, args: &ScanArgs) -> CmdResult {
         source_id: format!("mounted:{}", abs.display()),
         size: 0,
         sector_size: 512,
+        first_mib_hash: None,
+        last_mib_hash: None,
     };
     let dir = resolve_session(None, args.session)?;
     let mut session = if args.resume && dir.join("session.sqlite").exists() {
