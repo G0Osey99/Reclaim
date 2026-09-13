@@ -10,6 +10,7 @@ enum Route: Hashable {
     case imageTool
     case lostVolumes
     case snapshots
+    case smart
 }
 
 /// The sidebar → detail split (doc 08 §1).
@@ -53,6 +54,8 @@ struct ContentView: View {
             LostVolumesView()
         case .snapshots:
             SnapshotBrowserView()
+        case .smart:
+            SmartView()
         }
     }
 }
