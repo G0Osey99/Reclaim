@@ -27,12 +27,24 @@ documented the rest with exact commands rather than blocking:
    package so they don't break `swift build`). The universal `.app` is assembled
    by `scripts/build-app.sh` from per-`--triple` SwiftPM builds + `lipo` (the
    `swift build --arch … --arch …` path needs XCBuild from full Xcode).
-2. **No Developer ID / `DEVELOPMENT_TEAM`.** The only codesigning identity in the
-   keychain is a self-signed one. So the app is **ad-hoc signed** (hardened
-   runtime, no sandbox) and **not notarized**; `scripts/build-app.sh` prints the
-   exact Developer ID `codesign` / `notarytool` / `stapler` commands and will run
-   them automatically once `DEVELOPMENT_TEAM` + a Developer ID Application cert
-   exist (Part 5.3). See **Signing status** below.
+2. **No paid Developer ID (by choice) — free Apple Development signing instead.**
+   Xcode was installed mid-phase and a **free "Apple Development" personal-team
+   certificate** (team `FLQ56Q8G95`) added. `scripts/build-app.sh` auto-detects
+   it and signs in **`appledev`** mode: hardened runtime, no sandbox, team ID
+   baked into the bundle. A research+adversarial-verify workflow confirmed (Apple
+   docs + DTS forum threads) that a free Apple Development cert **is sufficient to
+   register and run the `SMAppService` privileged daemon on the signing Mac** —
+   the paid $99 Developer Program is required only to **notarize for distribution
+   to other Macs**. The critical trap it surfaced: **ad-hoc / "Sign to Run
+   Locally" is NOT accepted by SMAppService** (it can't securely identify the
+   code), so the free real cert — not ad-hoc — is what makes the helper
+   installable. Notarization (Developer ID) stays a Phase-6 / ship item. See
+   **Signing status** below.
+
+   One-time gotcha on this fresh Xcode: the login keychain had only the expired
+   (Feb 2023) original WWDR intermediate, so `codesign` failed with "unable to
+   build chain to self-signed root" until the **Apple WWDR CA G3** intermediate
+   (`https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer`) was imported.
 
 ## Done
 
@@ -170,11 +182,28 @@ decision).
   while browsing + recover with verify + same-disk refusal — via the FFI
   round-trip test, the Swift self-test, and the bundled-app `--smoke`.
 
-## Signing status (exact Phase-6 notarization commands)
-Built **ad-hoc**, hardened runtime, no sandbox — **not notarized** (no Developer
-ID cert / `DEVELOPMENT_TEAM` on this host). Once the Apple Developer account
-exists (Part 5.3), either re-run `scripts/build-app.sh` (it auto-detects the
-cert) or run:
+## Signing status
+Now built with the **free Apple Development** cert (team `FLQ56Q8G95`), hardened
+runtime, no sandbox — `codesign` chain is Apple Development → WWDR → Apple Root
+CA, `flags=0x10000(runtime)`, "satisfies its Designated Requirement", both
+Mach-O binaries `x86_64 arm64`, and `ReclaimTeamID` is baked into `Info.plist`
+so the app↔helper code requirement is pinned at runtime. This build runs on this
+Mac and **can register the SMAppService helper** (`scripts/build-app.sh`,
+`appledev` mode). It is **not notarized** (free certs can't be), so Gatekeeper
+warns on *other* Macs — irrelevant until distribution.
+
+Local install / run (no paid account needed):
+
+```sh
+rm -rf /Applications/Reclaim.app && cp -R dist/Reclaim.app /Applications/
+open /Applications/Reclaim.app     # Install helper → approve in Login Items → grant FDA → scan
+```
+
+### Exact Phase-6 notarization commands (paid Developer ID, for distribution only)
+Once an Apple Developer Program membership + Developer ID Application cert exist
+(Part 5.3), `export DEVELOPMENT_TEAM=<TEAMID>` and re-run `scripts/build-app.sh`
+(it auto-selects `devid` mode: Developer ID sign + DMG + notarize + staple), or
+run:
 
 ```sh
 export DEVELOPMENT_TEAM=<TEAMID>
@@ -203,17 +232,21 @@ the **same** Developer ID team; set `RECLAIM_TEAM_ID=<TEAMID>` at build time so
 both sides pin `setCodeSigningRequirement` (doc 03 §7 "both ways").
 
 ## Manual items (Ryker)
-1. **Install Xcode** (not just CLT) to run `xcodebuild test` against
-   `apps/Reclaim/XcodeTests/` and to produce a universal build via
-   `swift build --arch` if preferred. Everything else works under CLT.
-2. **Apple Developer account (Part 5.3):** create a Developer ID Application
-   cert, `export DEVELOPMENT_TEAM`, `notarytool store-credentials reclaim-notary`,
-   then re-run `scripts/build-app.sh` for a notarized DMG.
-3. **Interactive runtime proof:** with a signed build in `/Applications`, launch
-   the app, approve the helper in System Settings, grant Full Disk Access, and
-   scan the **sacrificial SD card** (Part 5.2) — the raw-device path (helper fd
-   → `RawDevice::from_fd`) needs a real device + the approved helper, which no
-   agent can click through. The golden-image path is fully covered here.
+1. **Interactive runtime proof (now unblocked — free signing):** the app is
+   Apple-Development-signed, so:
+   `rm -rf /Applications/Reclaim.app && cp -R dist/Reclaim.app /Applications/`,
+   launch it, click **Install helper** (approve in System Settings → Login
+   Items), **grant Full Disk Access**, then scan an external drive / SD card.
+   Read-only, so the source drive is never modified; the recover destination must
+   be a different disk (the app refuses same-disk). A spare SD card is only needed
+   to demo *delete → recover* on real media (SD/USB gets no TRIM, unlike the
+   internal SSD).
+2. **`xcodebuild test`:** Xcode is now installed — add `apps/Reclaim/XcodeTests/`
+   as an XCTest/XCUITest target and run `xcodebuild test` (the `ReclaimSelfTest`
+   assertion runner already covers the same assertions under `swift run`).
+3. **Paid Developer ID — only when distributing** (Part 5.3): membership +
+   Developer ID cert → `export DEVELOPMENT_TEAM` → re-run `scripts/build-app.sh`
+   for a notarized DMG. Not needed for personal/local use.
 
 ## Known gaps (deferred, with phase)
 - **`setCodeSigningRequirement` is only pinned when `RECLAIM_TEAM_ID` is set.**

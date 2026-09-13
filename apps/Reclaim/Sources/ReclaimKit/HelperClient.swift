@@ -75,7 +75,7 @@ public final class HelperClient: ObservableObject {
     private func connection() -> NSXPCConnection {
         let c = NSXPCConnection(machServiceName: reclaimHelperMachServiceName, options: .privileged)
         c.remoteObjectInterface = NSXPCInterface(with: ReclaimHelperXPC.self)
-        if let team = ProcessInfo.processInfo.environment["RECLAIM_TEAM_ID"], !team.isEmpty {
+        if let team = reclaimConfiguredTeamID() {
             if #available(macOS 13.0, *) {
                 setRequirement(c, reclaimCodeRequirement(teamID: team))
             }

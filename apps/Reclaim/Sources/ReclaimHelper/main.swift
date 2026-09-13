@@ -105,8 +105,7 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
         // Pin the caller to the same team when one is baked in at build time
         // (doc 03 §7 "both ways"). Ad-hoc builds have no team; the check is then
         // best-effort and documented as non-enforcing (phase-5 log).
-        let team = ProcessInfo.processInfo.environment["RECLAIM_TEAM_ID"]
-        if let team, !team.isEmpty {
+        if let team = reclaimConfiguredTeamID() {
             if #available(macOS 13.0, *) {
                 c.setCodeSigningRequirement(reclaimCodeRequirement(teamID: team))
             }

@@ -90,34 +90,82 @@ cp "$PKG/packaging/com.reclaim.helper.plist" \
 lipo -info "$APP/Contents/MacOS/Reclaim" || true
 
 # --- 5. sign / package ------------------------------------------------------
+# Signing mode is auto-detected (override with RECLAIM_SIGN=devid|appledev|adhoc):
+#   devid    — Developer ID Application + notarize (paid; distribution to others)
+#   appledev — free "Apple Development" personal-team cert (local + SMAppService)
+#   adhoc    — no identity (NOT accepted by SMAppService — helper won't install)
 ENTITLEMENTS="$PKG/packaging/Reclaim.entitlements"
 DEVID_CERT="$(security find-identity -v -p codesigning 2>/dev/null \
     | grep -o 'Developer ID Application[^"]*' | head -1 || true)"
+APPLEDEV_CERT="$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o 'Apple Development[^"]*' | head -1 || true)"
 
-if [ -n "${DEVELOPMENT_TEAM:-}" ] && [ -n "$DEVID_CERT" ]; then
-    step "codesign with Developer ID ($DEVID_CERT), hardened runtime"
-    SIGN=(codesign --force --timestamp --options runtime \
-        --sign "Developer ID Application")
-    # Inside-out: helper first, then the app.
-    "${SIGN[@]}" --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/ReclaimHelper"
-    "${SIGN[@]}" --entitlements "$ENTITLEMENTS" "$APP"
+MODE="${RECLAIM_SIGN:-}"
+if [ -z "$MODE" ]; then
+    if [ -n "${DEVELOPMENT_TEAM:-}" ] && [ -n "$DEVID_CERT" ]; then MODE=devid
+    elif [ -n "$APPLEDEV_CERT" ]; then MODE=appledev
+    else MODE=adhoc; fi
+fi
+
+# Bake the team id into the bundle so the app<->helper code requirement is pinned
+# at runtime (a launched .app has no RECLAIM_TEAM_ID env). $1 = team id.
+bake_team() {
+    /usr/libexec/PlistBuddy -c "Set :ReclaimTeamID $1" "$APP/Contents/Info.plist" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :ReclaimTeamID string $1" "$APP/Contents/Info.plist"
+}
+
+if [ "$MODE" = devid ]; then
+    step "codesign with Developer ID (distribution), hardened runtime"
+    bake_team "$DEVELOPMENT_TEAM"
+    codesign --force --timestamp --options runtime --sign "Developer ID Application" \
+        --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/ReclaimHelper"
+    codesign --force --timestamp --options runtime --sign "Developer ID Application" \
+        --entitlements "$ENTITLEMENTS" "$APP"
     codesign --verify --deep --strict --verbose=2 "$APP"
-
     step "create DMG"
-    DMG="$DIST/Reclaim-$VERSION.dmg"
-    rm -f "$DMG"
+    DMG="$DIST/Reclaim-$VERSION.dmg"; rm -f "$DMG"
     hdiutil create -volname "Reclaim" -srcfolder "$APP" -ov -format UDZO "$DMG"
-
     step "notarize + staple"
     if xcrun notarytool submit "$DMG" --keychain-profile "reclaim-notary" --wait; then
-        xcrun stapler staple "$DMG"
-        xcrun stapler staple "$APP"
+        xcrun stapler staple "$DMG"; xcrun stapler staple "$APP"
         echo "notarized + stapled: $DMG"
     else
         echo "notarytool failed — check 'xcrun notarytool store-credentials reclaim-notary'."
     fi
+
+elif [ "$MODE" = appledev ]; then
+    step "codesign with free Apple Development cert (local + SMAppService)"
+    echo "identity: $APPLEDEV_CERT"
+    # Helper first; read its Team ID; bake it in; then sign the app. Local dev
+    # signing uses --timestamp=none (a secure timestamp is only needed to notarize).
+    codesign --force --timestamp=none --options runtime --sign "$APPLEDEV_CERT" \
+        --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/ReclaimHelper"
+    TEAM_ID="$(codesign -dv "$APP/Contents/MacOS/ReclaimHelper" 2>&1 \
+        | sed -n 's/^TeamIdentifier=//p' | head -1)"
+    echo "team id: ${TEAM_ID:-<unknown>}"
+    if [ -n "$TEAM_ID" ] && [ "$TEAM_ID" != "not set" ]; then bake_team "$TEAM_ID"; fi
+    codesign --force --timestamp=none --options runtime --sign "$APPLEDEV_CERT" \
+        --entitlements "$ENTITLEMENTS" "$APP"
+    codesign --verify --deep --strict --verbose=2 "$APP" || true
+    cat <<EOF
+
+------------------------------------------------------------------------
+Signed with your free Apple Development certificate (team ${TEAM_ID:-?}),
+hardened runtime, no sandbox. Runs on THIS Mac and can register the
+privileged helper via SMAppService. NOT notarized (that needs the paid
+Developer ID) — it will warn on OTHER Macs, but that only matters to ship.
+
+To use it:
+  1. Move the app into /Applications (SMAppService daemons must live there):
+       rm -rf /Applications/Reclaim.app && cp -R "$APP" /Applications/
+  2. Launch /Applications/Reclaim.app -> Install helper (approve in System
+     Settings > Login Items) -> grant Full Disk Access.
+  3. Scan an external drive / SD card.
+------------------------------------------------------------------------
+EOF
+
 else
-    step "ad-hoc sign (no Developer ID / DEVELOPMENT_TEAM — Part 2.3 trap 4)"
+    step "ad-hoc sign (no signing identity found)"
     codesign --force --options runtime --sign - \
         --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/ReclaimHelper"
     codesign --force --options runtime --sign - \
@@ -127,32 +175,16 @@ else
 
 ------------------------------------------------------------------------
 Ad-hoc signed: $APP
-This launches locally but is NOT notarized and the SMAppService daemon
-will not install cleanly without a stable (Developer ID) signature.
+This launches locally, but SMAppService will REFUSE to register the helper
+from an ad-hoc signature (it cannot securely identify the code). Add an
+Apple ID in Xcode (Settings > Accounts) to get a free "Apple Development"
+cert, then re-run this script — it will sign in 'appledev' mode.
 
-Phase 6, once the Apple Developer account exists (Part 5.3), run:
-
-  export DEVELOPMENT_TEAM=<TEAMID>
-  # one-time notary credential:
-  xcrun notarytool store-credentials reclaim-notary \\
-      --apple-id <APPLE_ID> --team-id <TEAMID> --password <APP_SPECIFIC_PW>
-
-  # then re-run this script (it will Developer ID sign + notarize), or manually:
-  codesign --force --timestamp --options runtime \\
-      --sign "Developer ID Application: <NAME> (<TEAMID>)" \\
-      --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/ReclaimHelper"
-  codesign --force --timestamp --options runtime \\
-      --sign "Developer ID Application: <NAME> (<TEAMID>)" \\
-      --entitlements "$ENTITLEMENTS" "$APP"
-  hdiutil create -volname Reclaim -srcfolder "$APP" -ov -format UDZO \\
-      "$DIST/Reclaim-$VERSION.dmg"
-  xcrun notarytool submit "$DIST/Reclaim-$VERSION.dmg" \\
-      --keychain-profile reclaim-notary --wait
-  xcrun stapler staple "$DIST/Reclaim-$VERSION.dmg"
-  xcrun stapler staple "$APP"
+For distribution (Phase 6), with a paid Developer ID + DEVELOPMENT_TEAM set,
+re-run and it signs + notarizes in 'devid' mode.
 ------------------------------------------------------------------------
 EOF
 fi
 
 step "done"
-echo "artifact: $APP"
+echo "artifact: $APP  (mode: $MODE)"
