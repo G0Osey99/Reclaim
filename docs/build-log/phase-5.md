@@ -163,6 +163,17 @@ decision).
   session stays resumable) and resume re-runs with `resume = true`. This reuses
   the existing resumable model exactly (doc 08 §3 auto-pause).
 - **Ad-hoc signing fallback** (Part 2.3 trap 4) — see Signing status.
+- **SMAppService onboarding branches on `status`, not the `register()` throw**
+  (verified vs Apple DTS Forums 707482/799910). The normal daemon flow is:
+  `register()` returns (no throw) → `status == .requiresApproval` → user enables
+  it in System Settings → General → Login Items & Extensions → `.enabled`. A
+  "code 1 / Operation not permitted" throw is a *genuine* error (ad-hoc/mismatched
+  signing, wrong bundle location, or an already-loaded plist) **unless** status is
+  already `.requiresApproval` (e.g. a repeat Install press). There is no
+  status-change notification (FB17671405), so onboarding polls `status` on a 1.5 s
+  timer + on `NSApplication.didBecomeActiveNotification` and re-probes FDA, so the
+  pills flip to done on their own. `SMAppService.openSystemSettingsLoginItems()`
+  sends the user to the right pane (no per-daemon deep link exists).
 
 ## Gates
 - `cargo ci` **green** on macOS: fmt; clippy `--workspace --all-targets
