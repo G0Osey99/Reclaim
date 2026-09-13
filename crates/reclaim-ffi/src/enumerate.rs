@@ -34,8 +34,24 @@ pub fn probe(source: String) -> Result<SourceProbe, RcError> {
     let src = resolved.open()?;
 
     let probe = read_speed_probe(src.as_ref(), Duration::from_secs(1), 8 * 1024 * 1024);
-    let smart = match &resolved {
-        Resolved::Device { disk: Some(d), .. } if d.whole && !d.is_apfs_container() => d.smart,
+
+    // IOKit disk record behind this source. The by-name resolution carries it;
+    // for a helper-provided fd (the unprivileged app can't open /dev/rdiskN by
+    // name) we look it up by the fd's BSD label so a helper probe still gets SMART
+    // health and the internal/FileVault advisories — otherwise every fd source
+    // would read as "no SMART" and the health chip could miss a failing drive.
+    let looked_up_disk = match &resolved {
+        Resolved::Fd { label, .. } => reclaim_platform_macos::disk_by_bsd(label).ok().flatten(),
+        _ => None,
+    };
+    let disk_ref: Option<&reclaim_platform_macos::Disk> = match &resolved {
+        Resolved::Device { disk: Some(d), .. } => Some(d.as_ref()),
+        Resolved::Fd { .. } => looked_up_disk.as_ref(),
+        _ => None,
+    };
+
+    let smart = match disk_ref {
+        Some(d) if d.whole && !d.is_apfs_container() => d.smart,
         _ => reclaim_platform_macos::SmartSummary::NotSupported,
     };
     const SLOW_BPS: f64 = 5.0 * 1024.0 * 1024.0;
@@ -53,7 +69,7 @@ pub fn probe(source: String) -> Result<SourceProbe, RcError> {
             verdict.label()
         ));
     }
-    if let Resolved::Device { disk: Some(d), .. } = &resolved {
+    if let Some(d) = disk_ref {
         if d.internal == Some(true) {
             warnings.push(
                 "internal Apple SSD: TRIM discards freed blocks immediately, so carving deleted \

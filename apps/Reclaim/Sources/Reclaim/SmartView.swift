@@ -65,8 +65,14 @@ struct SmartView: View {
         loading = true
         errorMessage = nil
         probe = nil
-        let spec = bsd
         Task {
+            // Prefer a helper-provided fd (no root needed), as scanning does; the
+            // core reads SMART for the fd's disk by its BSD label.
+            var dev: DeviceFD?
+            if model.helper.status == .enabled {
+                dev = try? await model.helper.openDevice(bsd: bsd)
+            }
+            let spec = dev?.sourceSpec ?? bsd
             let result: Result<SourceProbe, Error>
             do {
                 let p = try await Task.detached { try ReclaimCore.probe(source: spec) }.value
@@ -74,6 +80,7 @@ struct SmartView: View {
             } catch {
                 result = .failure(error)
             }
+            dev?.close()
             loading = false
             switch result {
             case .success(let p): probe = p

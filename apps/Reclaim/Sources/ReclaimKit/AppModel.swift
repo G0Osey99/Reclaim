@@ -42,17 +42,36 @@ public final class AppModel: ObservableObject {
     }
 
     /// Probe the selected source (health, geometry, partitions — doc 08 §2.2).
+    ///
+    /// The app is unprivileged, so opening `/dev/rdiskN` by name needs root and
+    /// fails in the shipping app — which is why the plan used to fall back to a
+    /// "Probe source" button that did nothing. So, exactly like a scan, prefer a
+    /// read-only fd from the privileged helper (docs/plan/03 §7). The fd is kept
+    /// alive until the core has dup'd it (i.e. `probe` returns), then closed.
     public func probeSelected() {
         guard let src = selectedSource else { return }
         probing = true
         probe = nil
-        let spec = src.bsdName
-        Task.detached { [weak self] in
+        let bsd = src.bsdName
+        Task { [weak self] in
+            guard let self else { return }
+            var dev: DeviceFD?
+            if self.helper.status == .enabled {
+                dev = try? await self.helper.openDevice(bsd: bsd)
+            }
+            let spec = dev?.sourceSpec ?? bsd
             let result: Result<SourceProbe, Error>
-            do { result = .success(try ReclaimCore.probe(source: spec)) } catch {
+            do {
+                let p = try await Task.detached { try ReclaimCore.probe(source: spec) }.value
+                result = .success(p)
+            } catch {
                 result = .failure(error)
             }
-            await self?.applyProbe(result)
+            dev?.close()
+            // Ignore a probe whose source is no longer selected (rapid switching);
+            // the current selection's own probe governs the UI.
+            guard self.selectedSourceBSD == bsd else { return }
+            self.applyProbe(result)
         }
     }
 

@@ -51,10 +51,35 @@ struct SourceDetailView: View {
                 .help(showInspector ? "Hide scan options" : "Show scan options")
             }
         }
-        .onAppear {
+        .task(id: bsd) {
+            // Auto-probe on selection AND whenever the selected source changes.
+            // (`.task(id:)` re-runs on id change; `.onAppear` only fired once, so
+            // switching sources left the stale probe and showed a manual button.)
+            selectedPartition = nil
             model.selectedSourceBSD = bsd
             if model.probe?.source != bsd { model.probeSelected() }
         }
+    }
+
+    /// Shown only when an automatic probe could not complete (e.g. the helper
+    /// isn't set up yet, or the device needs privileges the app lacks).
+    @ViewBuilder private var probeFallback: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let e = model.errorMessage {
+                Label(e, systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.helper.status != .enabled {
+                Label(
+                    "Reading a device needs the privileged helper. Finish setup in onboarding, then retry.",
+                    systemImage: "lock.shield")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("Retry probe") { model.probeSelected() }
+        }
+        .padding(.vertical)
     }
 
     private var planColumn: some View {
@@ -73,7 +98,7 @@ struct SourceDetailView: View {
                 } else if model.probing {
                     ProgressView("Probing \(bsd)…").padding(.vertical)
                 } else {
-                    Button("Probe source") { model.probeSelected() }
+                    probeFallback
                 }
                 Spacer(minLength: 0)
             }
