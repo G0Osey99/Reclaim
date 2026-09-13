@@ -25,6 +25,24 @@ struct EngineDef {
 
 /// The engine registry (order is priority on a probe tie). Phase 3 adds the
 /// APFS and HFS+ engines alongside the Phase-2 exFAT/FAT/NTFS ones.
+/// Probe every metadata engine at a source and return the best `(kind,
+/// confidence)` with confidence ≥ 0.5 — used to cross-validate a lost-structure
+/// proposal ("FS probe succeeds at the proposed offset", docs/plan/04 §2 / FR-SCAN-4).
+#[must_use]
+pub fn probe_best(
+    src: &std::sync::Arc<dyn reclaim_block::BlockSource>,
+) -> Option<(&'static str, f32)> {
+    let mut best: Option<(&'static str, f32)> = None;
+    for e in engines() {
+        if let Some(p) = (e.probe)(src) {
+            if p.confidence >= 0.5 && best.is_none_or(|(_, c)| p.confidence > c) {
+                best = Some((p.fs_kind, p.confidence));
+            }
+        }
+    }
+    best
+}
+
 fn engines() -> [EngineDef; 7] {
     [
         EngineDef {

@@ -44,6 +44,15 @@ pub fn run(spec: &str, json: bool) -> CmdResult {
                 ));
             }
         }
+        Resolved::Volume { session_dir, index } => {
+            lines.push((
+                "source".into(),
+                format!(
+                    "adopted volume {index} from session {}",
+                    session_dir.display()
+                ),
+            ));
+        }
     }
 
     // Probe + geometry from the opened handle.

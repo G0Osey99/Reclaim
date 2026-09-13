@@ -54,6 +54,23 @@ pub fn default_session_dir() -> PathBuf {
     dir
 }
 
+/// A stable session directory keyed by the source identity, so `volumes` and a
+/// later `adopt`/`scan` (without an explicit `--session`) reuse the same stored
+/// proposals (docs/plan/07 §1).
+#[must_use]
+pub fn stable_session_dir(source_id: &str) -> PathBuf {
+    let h = blake3::hash(source_id.as_bytes());
+    let short = &h.to_hex()[..16];
+    let base = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    #[cfg(target_os = "macos")]
+    let dir = base.join("Library/Application Support/Reclaim/sessions");
+    #[cfg(not(target_os = "macos"))]
+    let dir = base.join(".local/share/reclaim/sessions");
+    dir.join(format!("vol-{short}"))
+}
+
 fn timestamp_name() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -76,6 +93,10 @@ pub fn dest_on_same_disk(source: &Resolved, dest: &Path) -> bool {
             (Some(a), Some(b)) => a == b,
             _ => false,
         },
+        // An adopted volume sits on its original source — check that.
+        Resolved::Volume { .. } => source
+            .underlying()
+            .is_some_and(|inner| dest_on_same_disk(&inner, dest)),
     }
 }
 

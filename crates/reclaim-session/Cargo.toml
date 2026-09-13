@@ -25,6 +25,7 @@ fs-apfs.workspace = true
 fs-hfs.workspace = true
 fs-ext.workspace = true
 fs-iso.workspace = true
+reclaim-structs.workspace = true
 rusqlite.workspace = true
 blake3.workspace = true
 crossbeam-channel.workspace = true

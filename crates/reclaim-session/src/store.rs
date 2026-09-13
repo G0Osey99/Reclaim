@@ -102,6 +102,22 @@ impl CarvedRecord {
     }
 }
 
+/// A lost-structure proposal row (docs/plan/04 §1). Persisted in
+/// `proposed_volumes`; the display order is the `adopt` index.
+#[derive(Clone, Debug)]
+pub struct ProposalRow {
+    /// Volume start byte offset within the source.
+    pub start: u64,
+    /// Volume length in bytes.
+    pub len: u64,
+    /// Filesystem kind or GPT-entry hint.
+    pub fs: String,
+    /// Confidence 0..1.
+    pub confidence: f32,
+    /// Human-readable evidence.
+    pub evidence: String,
+}
+
 /// A named filesystem entry to store (input to [`Store::insert_entries`]).
 #[derive(Clone, Debug)]
 pub struct EntryRow {
@@ -496,6 +512,47 @@ impl Store {
         } else {
             Ok(None)
         }
+    }
+
+    /// Replace all lost-structure proposals (docs/plan/04 §1, Phase 4). Rows are
+    /// stored (and later listed) in the given order — the display / adopt index.
+    pub fn replace_proposals(&self, rows: &[ProposalRow]) -> Result<(), SessionError> {
+        self.conn.execute("DELETE FROM proposed_volumes", [])?;
+        for r in rows {
+            self.conn.execute(
+                "INSERT INTO proposed_volumes(start,len,fs,confidence,evidence) \
+                 VALUES(?1,?2,?3,?4,?5)",
+                params![
+                    r.start as i64,
+                    r.len as i64,
+                    r.fs,
+                    f64::from(r.confidence),
+                    r.evidence
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// List proposals in stored (display) order.
+    pub fn list_proposals(&self) -> Result<Vec<ProposalRow>, SessionError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT start,len,fs,confidence,evidence FROM proposed_volumes ORDER BY id")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(ProposalRow {
+                start: r.get::<_, i64>(0)? as u64,
+                len: r.get::<_, i64>(1)? as u64,
+                fs: r.get(2)?,
+                confidence: r.get::<_, f64>(3)? as f32,
+                evidence: r.get(4)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 
     /// Append an event row.

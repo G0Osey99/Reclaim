@@ -16,11 +16,12 @@ pub mod id;
 pub mod meta;
 pub mod scan;
 pub mod store;
+pub mod structs;
 
 pub use events::Event;
 pub use meta::MetaReport;
 pub use scan::{ScanConfig, ScanReport};
-pub use store::{CarvedRecord, EntryRow, QueryFilter, Sort, Store};
+pub use store::{CarvedRecord, EntryRow, ProposalRow, QueryFilter, Sort, Store};
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -168,5 +169,11 @@ impl Session {
     fn read_source_json(dir: &Path) -> Result<SourceInfo, SessionError> {
         let text = std::fs::read_to_string(dir.join("source.json"))?;
         Ok(serde_json::from_str(&text)?)
+    }
+
+    /// Read a session directory's persisted [`SourceInfo`] without opening the
+    /// store (used to reopen the original source behind an adopted volume).
+    pub fn read_source_info(dir: &Path) -> Result<SourceInfo, SessionError> {
+        Self::read_source_json(dir)
     }
 }

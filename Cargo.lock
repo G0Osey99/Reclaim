@@ -915,6 +915,7 @@ name = "reclaim-cli"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "clap",
  "comfy-table",
  "fs-apfs",
@@ -993,6 +994,7 @@ dependencies = [
  "reclaim-fs-core",
  "reclaim-part",
  "reclaim-sigs",
+ "reclaim-structs",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1006,6 +1008,17 @@ version = "0.0.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "reclaim-structs"
+version = "0.0.0"
+dependencies = [
+ "memchr",
+ "proptest",
+ "reclaim-block",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]

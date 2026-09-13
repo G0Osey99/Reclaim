@@ -274,6 +274,22 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<SnapshotsCmd>,
     },
+    /// Find lost/damaged volumes (FR-SCAN-4); `adopt N` yields a scannable source.
+    Volumes {
+        /// `diskN`, `/dev/rdiskN`, or an image file (possibly a container).
+        source: String,
+        #[command(subcommand)]
+        cmd: Option<VolumesCmd>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum VolumesCmd {
+    /// Adopt proposal N as a `session:<dir>/volume/N` source for `scan`.
+    Adopt {
+        /// 1-based proposal index from the `volumes` listing.
+        n: usize,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -549,6 +565,13 @@ fn dispatch(cli: &Cli) -> Result<Exit, CmdError> {
         Command::Snapshots { source, cmd } => match cmd {
             None => commands::snapshots::list(source, cli.json),
             Some(SnapshotsCmd::Diff { from }) => commands::snapshots::diff(source, *from, cli.json),
+        },
+
+        Command::Volumes { source, cmd } => match cmd {
+            None => commands::volumes::run(source, global_session, cli.json),
+            Some(VolumesCmd::Adopt { n }) => {
+                commands::volumes::adopt(source, *n, global_session, cli.json)
+            }
         },
     }
 }

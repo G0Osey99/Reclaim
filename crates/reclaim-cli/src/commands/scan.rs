@@ -135,6 +135,28 @@ pub fn run(args: &ScanArgs) -> CmdResult {
             );
             return Ok(Exit::Interrupted);
         }
+
+        // Structure pass: find lost/damaged volumes alongside the deep read and
+        // store them for `reclaim volumes` / `adopt` (docs/plan/03 §2.4).
+        let props = reclaim_session::structs::scan_and_store(&src, session.store())
+            .map_err(|e| CmdError::internal(e.to_string()))?;
+        if json {
+            for p in &props {
+                let ev = reclaim_session::Event::Volume {
+                    start: p.start,
+                    len: p.len,
+                    fs: p.fs.clone(),
+                    confidence: p.confidence,
+                };
+                println!("{}", ev.to_ndjson());
+            }
+        } else if !quiet && !props.is_empty() {
+            eprintln!(
+                "structure: {} lost-volume proposal(s) — `reclaim volumes {}` to list.",
+                props.len(),
+                args.source
+            );
+        }
     }
 
     // --- Merge carved ↔ named (only meaningful when both passes ran) ---

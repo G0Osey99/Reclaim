@@ -24,6 +24,7 @@ fs-apfs = { path = "../fs-apfs" }
 fs-hfs = { path = "../fs-hfs" }
 fs-ext = { path = "../fs-ext" }
 fs-iso = { path = "../fs-iso" }
+reclaim-structs = { path = "../reclaim-structs" }
 tempfile = "3"
 
 [profile.release]
@@ -116,6 +117,13 @@ bench = false
 [[bin]]
 name = "container"
 path = "fuzz_targets/container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "structs"
+path = "fuzz_targets/structs.rs"
 test = false
 doc = false
 bench = false

@@ -17,6 +17,7 @@ members = [
     "crates/fs-hfs",
     "crates/fs-ext",
     "crates/fs-iso",
+    "crates/reclaim-structs",
     "crates/reclaim-session",
     "crates/reclaim-report",
     "crates/reclaim-cli",

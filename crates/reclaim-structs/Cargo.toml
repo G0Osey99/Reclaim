@@ -1,0 +1,22 @@
+[package]
+name = "reclaim-structs"
+description = "Reclaim lost-structure engine (docs/plan/03 §2.4): scans a source for partition-table and filesystem anchors and proposes recoverable volumes for the metadata engines to adopt."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reclaim-block.workspace = true
+memchr.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

@@ -67,9 +67,28 @@ impl std::fmt::Debug for ExFat {
 }
 
 /// Probe a volume source for exFAT (docs/plan/04 §2).
+/// Read the main VBR at offset 0, falling back to the backup boot sector (12
+/// logical sectors in) when the main is zeroed/corrupt (docs/plan/04 §3.4). The
+/// backup is a byte-identical copy, so its volume-relative geometry is valid for
+/// a volume whose start is the source origin.
+fn read_boot(src: &Arc<dyn BlockSource>) -> Option<Vec<u8>> {
+    let main = read(src, 0, 512);
+    if main.get(3..11) == Some(b"EXFAT   ") {
+        return Some(main);
+    }
+    for shift in 9u32..=12 {
+        let off = 12u64 << shift; // backup boot sector = 12 * bytes_per_sector
+        let bak = read(src, off, 512);
+        if bak.get(3..11) == Some(b"EXFAT   ") && bak.get(108).copied() == Some(shift as u8) {
+            return Some(bak);
+        }
+    }
+    None
+}
+
 #[must_use]
 pub fn probe(src: &Arc<dyn BlockSource>) -> Option<Probe> {
-    let boot = read(src, 0, 512);
+    let boot = read_boot(src)?;
     if boot.get(3..11) != Some(b"EXFAT   ") {
         return None;
     }
@@ -95,10 +114,8 @@ pub fn probe(src: &Arc<dyn BlockSource>) -> Option<Probe> {
 
 /// Open an exFAT volume (consumes the [`Probe`] from [`probe`]).
 pub fn open(src: Arc<dyn BlockSource>, _probe: Probe) -> Result<ExFat, FsError> {
-    let boot = read(&src, 0, 512);
-    if boot.get(3..11) != Some(b"EXFAT   ") {
-        return Err(FsError::NotThisFs("no EXFAT boot signature".into()));
-    }
+    let boot = read_boot(&src)
+        .ok_or_else(|| FsError::NotThisFs("no EXFAT boot signature (main or backup)".into()))?;
     let bps_shift = boot.get(108).copied().unwrap_or(0);
     let spc_shift = boot.get(109).copied().unwrap_or(0);
     if !(9..=12).contains(&bps_shift) || spc_shift > 25 {
