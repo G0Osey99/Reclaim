@@ -2,45 +2,74 @@ import SwiftUI
 import ReclaimCore
 import ReclaimKit
 
-/// Source detail + scan plan (doc 08 §2.2). Starts a scan and swaps to the live
-/// results screen in the same pane.
+/// Source detail + scan plan (doc 08 §2.2), "Scan options inspector" layout
+/// (GUI Option B): a Quick/Deep/Full **preset** control on the plan and a docked,
+/// collapsible **Scan Options** inspector on the right. Starts a scan and swaps to
+/// the live results screen in the same pane.
 struct SourceDetailView: View {
     @EnvironmentObject var model: AppModel
     let bsd: String
 
     @State private var selectedPartition: Int?
-    @State private var depth: ScanDepth = .full
-    @State private var showEngines = false
+    @State private var showInspector = true
+    @StateObject private var plan = ScanPlanModel()
     @StateObject private var scan = ScanController()
     @State private var scanning = false
-
-    enum ScanDepth: String, CaseIterable, Identifiable {
-        case quick = "Quick", deep = "Deep", full = "Full"
-        var id: String { rawValue }
-    }
 
     var body: some View {
         if scanning, let session = scan.session {
             ScanResultsView(scan: scan, session: session, title: sourceTitle)
         } else {
-            plan
+            planView
         }
     }
 
     private var source: SourceSummary? { model.sources.first { $0.bsdName == bsd } }
     private var sourceTitle: String { source?.volumeName ?? source?.model ?? bsd }
+    private var probe: SourceProbe? {
+        guard let p = model.probe, p.source == bsd else { return nil }
+        return p
+    }
 
-    private var plan: some View {
+    private var planView: some View {
+        HStack(spacing: 0) {
+            planColumn
+                .frame(minWidth: 420, maxWidth: .infinity)
+            if showInspector {
+                Divider()
+                ScanOptionsInspector(plan: plan, probe: probe)
+                    .frame(width: 300)
+            }
+        }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    showInspector.toggle()
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .help(showInspector ? "Hide scan options" : "Show scan options")
+            }
+        }
+        .onAppear {
+            model.selectedSourceBSD = bsd
+            if model.probe?.source != bsd { model.probeSelected() }
+        }
+    }
+
+    private var planColumn: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                if let p = model.probe, p.source == bsd {
+                if let p = probe {
                     if !p.partitions.isEmpty {
                         PartitionBar(
                             partitions: p.partitions, total: p.size, selected: $selectedPartition)
                     }
                     warnings(p)
-                    scanConfig(p)
+                    infoBox(p)
+                    presetControl(p)
+                    actions(p)
                 } else if model.probing {
                     ProgressView("Probing \(bsd)…").padding(.vertical)
                 } else {
@@ -49,10 +78,6 @@ struct SourceDetailView: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
-        }
-        .onAppear {
-            model.selectedSourceBSD = bsd
-            if model.probe?.source != bsd { model.probeSelected() }
         }
     }
 
@@ -65,7 +90,7 @@ struct SourceDetailView: View {
                 Text(subtitle).foregroundStyle(.secondary).font(.callout)
             }
             Spacer()
-            if let p = model.probe, p.source == bsd {
+            if let p = probe {
                 HealthChip(level: p.health)
             }
         }
@@ -92,7 +117,7 @@ struct SourceDetailView: View {
         }
     }
 
-    @ViewBuilder private func scanConfig(_ p: SourceProbe) -> some View {
+    private func infoBox(_ p: SourceProbe) -> some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 KV(key: "Scheme", value: p.scheme)
@@ -101,19 +126,52 @@ struct SourceDetailView: View {
                     value: "logical \(p.sectorSizeLogical), physical \(p.sectorSizePhysical)")
                 KV(key: "Read speed", value: "\(formatBytes(UInt64(p.readSpeedBps)))/s")
                 if let c = p.container { KV(key: "Container", value: c) }
-                DisclosureGroup("Engines & options", isExpanded: $showEngines) {
-                    Text("APFS · HFS+ · NTFS · exFAT · FAT · ext · ISO metadata, signature carve, and lost-structure — auto-selected. Block size auto; read-only.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
 
-        HStack(spacing: 12) {
-            Picker("Depth", selection: $depth) {
-                ForEach(ScanDepth.allCases) { Text($0.rawValue).tag($0) }
+    /// The preset segmented control + a one-line summary/estimate. "Custom" is
+    /// derived (shown as a chip) rather than directly selectable.
+    private func presetControl(_ p: SourceProbe) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("Preset").font(.callout).foregroundStyle(.secondary)
+                Picker("Preset", selection: Binding(
+                    get: { plan.preset },
+                    set: { plan.select($0) }
+                )) {
+                    ForEach(ScanPreset.selectable) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                if plan.preset == .custom {
+                    Text("Custom")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.18), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
+                }
+                if !showInspector {
+                    Button("Options…") { showInspector = true }
+                        .controlSize(.small)
+                }
             }
-            .pickerStyle(.segmented).fixedSize()
+            HStack(spacing: 6) {
+                Text(plan.preset.summary)
+                if let est = estimatedScanText(
+                    preset: plan.preset, sizeBytes: p.size, readBps: p.readSpeedBps) {
+                    Text("·").foregroundStyle(.tertiary)
+                    Text(est)
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
+    @ViewBuilder private func actions(_ p: SourceProbe) -> some View {
+        HStack(spacing: 12) {
             if p.imageFirst {
                 Button {
                     // Health is red — steer to Image first (doc 08 §2.2).
@@ -124,6 +182,7 @@ struct SourceDetailView: View {
                     .help("Recommended: image this drive before scanning")
                 Button(action: startScan) { Label("Scan anyway", systemImage: "magnifyingglass") }
             } else {
+                Spacer()
                 Button(action: startScan) {
                     Label("Scan", systemImage: "magnifyingglass")
                 }
@@ -133,15 +192,11 @@ struct SourceDetailView: View {
         }
     }
 
-    /// Begin a scan: obtain a source spec (a helper fd for a device when the
-    /// helper is enabled; otherwise the BSD name, which needs root) and start.
+    /// Begin a scan with the plan's options: obtain a source spec (a helper fd for
+    /// a device when the helper is enabled; otherwise the BSD name, which needs
+    /// root) and start.
     private func startScan() {
-        let opts: ScanOptions
-        switch depth {
-        case .quick: opts = Options.scan(quick: true, deep: false)
-        case .deep: opts = Options.scan(quick: false, deep: true)
-        case .full: opts = Options.scan(quick: true, deep: true)
-        }
+        let opts = plan.options
         Task {
             let spec = await resolveSourceSpec()
             await MainActor.run {

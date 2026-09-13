@@ -78,6 +78,76 @@ section("byte formatting")
 check(formatBytes(0) == "0 B", "zero bytes")
 check(formatBytes(1536).hasSuffix("KB"), "1536 → KB")
 
+section("ScanPreset ↔ ScanOptions (scan-options inspector)")
+do {
+    check(ScanPreset.detect(from: ScanPreset.quick.canonicalOptions()!) == .quick, "Quick options → Quick")
+    check(ScanPreset.detect(from: ScanPreset.deep.canonicalOptions()!) == .deep, "Deep options → Deep")
+    check(ScanPreset.detect(from: ScanPreset.full.canonicalOptions()!) == .full, "Full options → Full")
+
+    let q = ScanPreset.quick.canonicalOptions()!
+    check(q.quick && !q.deep, "Quick = metadata only")
+    let d = ScanPreset.deep.canonicalOptions()!
+    check(!d.quick && d.deep, "Deep = carve only")
+    let f = ScanPreset.full.canonicalOptions()!
+    check(f.quick && f.deep, "Full = both passes")
+
+    // Any non-pass deviation → Custom.
+    var custom = ScanPreset.full.canonicalOptions()!
+    custom.bruteForce = true
+    check(ScanPreset.detect(from: custom) == .custom, "brute-force deviation → Custom")
+    custom = ScanPreset.full.canonicalOptions()!
+    custom.families = ["image"]
+    check(ScanPreset.detect(from: custom) == .custom, "family restriction → Custom")
+    custom = ScanPreset.full.canonicalOptions()!
+    custom.rangeStart = 4096
+    check(ScanPreset.detect(from: custom) == .custom, "range deviation → Custom")
+
+    // Nothing-to-run is never a named preset.
+    check(ScanPreset.detect(from: makeScanOptions(quick: false, deep: false)) == .custom, "no passes → Custom")
+}
+
+section("Scan family groups")
+do {
+    check(ScanFamilies.selectedGroups(from: []).count == ScanFamilyGroup.all.count, "empty families = all groups selected")
+    check(ScanFamilies.families(for: Set(ScanFamilyGroup.all.map(\.id))).isEmpty, "all groups → [] (all)")
+    let photosOnly = ScanFamilies.families(for: ["photos"])
+    check(Set(photosOnly) == Set(["image", "raw"]), "Photos maps to image + raw")
+    let groups = ScanFamilies.selectedGroups(from: ["video"])
+    check(groups == ["video"], "video family → Video group")
+}
+
+section("Scan option tables + duration")
+do {
+    check(ScanBlockSize.label(0) == "Auto", "block size 0 → Auto")
+    check(ScanCheckpoint.label(5) == "Every 5 s", "checkpoint 5 → Every 5 s")
+    check(ScanMaxFileSize.label(UInt64(4) << 30) == "4 GB", "max size 4 GiB → 4 GB")
+    check(formatDuration(45) == "45 s", "45 s")
+    check(formatDuration(600) == "10 min", "600 s → 10 min")
+    check(formatDuration(0) == "—", "zero → dash")
+}
+
+section("ScanPlanModel (preset ⇄ edit)")
+await MainActor.run {
+    let plan = ScanPlanModel(preset: .full)
+    check(plan.preset == .full, "starts at Full")
+    plan.select(.quick)
+    check(plan.preset == .quick && plan.options.quick && !plan.options.deep, "select Quick applies + names it")
+    plan.edit { $0.bruteForce = true }
+    check(plan.preset == .custom && plan.options.bruteForce, "editing an option → Custom")
+    plan.edit { $0.bruteForce = false }
+    check(plan.preset == .quick, "reverting the edit snaps back to Quick")
+    plan.reset()
+    check(plan.preset == .full, "reset → Full")
+    // Deselecting a family group narrows carve and flips to Custom.
+    plan.toggleFamilyGroup("other")
+    check(plan.preset == .custom && !plan.isFamilyGroupOn("other"), "deselect a family → Custom")
+    // The last remaining group cannot be removed.
+    for g in ScanFamilyGroup.all where g.id != "photos" { if plan.isFamilyGroupOn(g.id) { plan.toggleFamilyGroup(g.id) } }
+    check(plan.isFamilyGroupOn("photos"), "one family group always stays selected")
+    plan.toggleFamilyGroup("photos")
+    check(plan.isFamilyGroupOn("photos"), "cannot deselect the last family group")
+}
+
 // MARK: - Golden-image smoke (UI path against a real session) ---------------
 
 func repoGolden() -> String? {
