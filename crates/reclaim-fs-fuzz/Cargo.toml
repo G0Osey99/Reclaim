@@ -22,6 +22,10 @@ fs-fat = { path = "../fs-fat" }
 fs-ntfs = { path = "../fs-ntfs" }
 fs-apfs = { path = "../fs-apfs" }
 fs-hfs = { path = "../fs-hfs" }
+fs-ext = { path = "../fs-ext" }
+fs-iso = { path = "../fs-iso" }
+reclaim-structs = { path = "../reclaim-structs" }
+tempfile = "3"
 
 [profile.release]
 debug = 1
@@ -92,6 +96,34 @@ bench = false
 [[bin]]
 name = "hfs_record"
 path = "fuzz_targets/hfs_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ext"
+path = "fuzz_targets/ext.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iso"
+path = "fuzz_targets/iso.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "container"
+path = "fuzz_targets/container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "structs"
+path = "fuzz_targets/structs.rs"
 test = false
 doc = false
 bench = false

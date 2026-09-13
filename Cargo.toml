@@ -15,6 +15,9 @@ members = [
     "crates/fs-ntfs",
     "crates/fs-apfs",
     "crates/fs-hfs",
+    "crates/fs-ext",
+    "crates/fs-iso",
+    "crates/reclaim-structs",
     "crates/reclaim-session",
     "crates/reclaim-report",
     "crates/reclaim-cli",
@@ -79,6 +82,17 @@ fs-ntfs = { path = "crates/fs-ntfs" }
 # Phase 3 additions (APFS + HFS+ metadata engines).
 fs-apfs = { path = "crates/fs-apfs" }
 fs-hfs = { path = "crates/fs-hfs" }
+# Phase 4 additions (lost-structure engine, ext/ISO engines).
+reclaim-structs = { path = "crates/reclaim-structs" }
+fs-ext = { path = "crates/fs-ext" }
+fs-iso = { path = "crates/fs-iso" }
+# Phase 4 permissive, pure-Rust decompressors for image containers (DMG/E01).
+# All MIT / Apache-2.0 / Zlib (deny.toml allow-list) and pure Rust, so the
+# recovery build's `otool -L` stays limited to system libs (no new dylib).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] } # zlib/deflate: UDZO, E01 (MIT/Apache-2.0)
+bzip2-rs = "0.1"                                      # UDBZ decode-only (MIT/Apache-2.0)
+lzma-rs = "0.3"                                       # ULMO / LZMA + XZ (MIT)
+lzfse_rust = "0.2"                                    # ULFO / LZFSE (MIT/Apache-2.0)
 
 # Small, safe optimizations for the release CLI; tests stay debuggable.
 [profile.release]

@@ -5,7 +5,7 @@
 //! Adopted volumes, RAID and `mounted:` specs arrive in later phases.
 
 use crate::exit::CmdError;
-use reclaim_block::{BlockSource, ImageFile, RawDevice};
+use reclaim_block::{BlockSource, OffsetView, RawDevice};
 use reclaim_platform_macos::Disk;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,16 +22,44 @@ pub enum Resolved {
         /// Enumeration metadata (None if the device isn't in the inventory).
         disk: Option<Box<Disk>>,
     },
-    /// An image file on disk.
+    /// An image file on disk (raw or an auto-detected container).
     Image {
         /// Path to the image.
         path: PathBuf,
+    },
+    /// An adopted lost-structure volume: proposal `index` (1-based) in the
+    /// session at `session_dir`, presented as an [`OffsetView`] over the
+    /// original source (docs/plan/07 §1 `session:<id>/volume/<n>`).
+    Volume {
+        /// The session directory holding the stored proposals + source.json.
+        session_dir: PathBuf,
+        /// 1-based proposal index.
+        index: usize,
     },
 }
 
 impl Resolved {
     /// Resolve a `SOURCE` string.
     pub fn parse(spec: &str) -> Result<Resolved, CmdError> {
+        // Adopted lost-structure volume: `session:<dir>/volume/<n>`.
+        if let Some(rest) = spec.strip_prefix("session:") {
+            let (dir, n) = rest.rsplit_once("/volume/").ok_or_else(|| {
+                CmdError::new(
+                    crate::exit::Exit::Usage,
+                    format!("bad volume spec '{spec}': expected session:<dir>/volume/<n>"),
+                )
+            })?;
+            let index: usize = n.parse().map_err(|_| {
+                CmdError::new(
+                    crate::exit::Exit::Usage,
+                    format!("bad volume index '{n}' in '{spec}'"),
+                )
+            })?;
+            return Ok(Resolved::Volume {
+                session_dir: PathBuf::from(dir),
+                index,
+            });
+        }
         // Device forms: "diskN", "diskNsM", "/dev/diskN", "/dev/rdiskN".
         let stripped = spec.strip_prefix("/dev/").unwrap_or(spec);
         let bsd_candidate = stripped.strip_prefix('r').unwrap_or(stripped);
@@ -86,6 +114,28 @@ impl Resolved {
                 disk: None,
             });
         }
+        // Image-container source ids are `<fmt>:{path}:{len}` (docs/plan/04 §5);
+        // reopen by path so `open()` re-detects the container on resume.
+        for pfx in [
+            "dmg:",
+            "vmdk:",
+            "vmdk-flat:",
+            "vdi:",
+            "vhd-fixed:",
+            "vhd-dyn:",
+            "vhdx:",
+            "qcow2:",
+            "ewf:",
+            "sparseimage:",
+            "split:",
+        ] {
+            if let Some(rest) = id.strip_prefix(pfx) {
+                let path = rest.rsplit_once(':').map(|(p, _)| p).unwrap_or(rest);
+                return Some(Resolved::Image {
+                    path: PathBuf::from(path),
+                });
+            }
+        }
         None
     }
 
@@ -97,15 +147,71 @@ impl Resolved {
                 Ok(dev) => Ok(Arc::new(dev)),
                 Err(e) => Err(map_open_error(bsd, raw_node, e)),
             },
-            Resolved::Image { path } => match ImageFile::open(path) {
-                Ok(img) => Ok(Arc::new(img)),
+            // Auto-detect image-container formats (DMG/VMDK/VDI/VHD/VHDX/QCOW2/
+            // E01/sparseimage/split) and fall back to a raw image (docs/plan/04 §5).
+            Resolved::Image { path } => match reclaim_block::open_image_auto(path) {
+                Ok(src) => Ok(src),
                 Err(e) => Err(CmdError::not_found(format!(
                     "cannot open image '{}': {e}",
                     path.display()
                 ))),
             },
+            Resolved::Volume { session_dir, index } => open_adopted(session_dir, *index),
         }
     }
+
+    /// The original source behind an adopted `Volume` (for the recover
+    /// same-disk safety check); `None` for non-volume sources.
+    #[must_use]
+    pub fn underlying(&self) -> Option<Resolved> {
+        match self {
+            Resolved::Volume { session_dir, .. } => {
+                let info = reclaim_session::Session::read_source_info(session_dir).ok()?;
+                Resolved::from_source_id(&info.source_id)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Open proposal `index` (1-based) from the session at `session_dir` as an
+/// [`OffsetView`] over the reopened original source.
+fn open_adopted(session_dir: &Path, index: usize) -> Result<Arc<dyn BlockSource>, CmdError> {
+    let info = reclaim_session::Session::read_source_info(session_dir).map_err(|e| {
+        CmdError::not_found(format!(
+            "cannot read session '{}': {e}",
+            session_dir.display()
+        ))
+    })?;
+    let store = reclaim_session::Store::open(&session_dir.join("session.sqlite"))
+        .map_err(|e| CmdError::not_found(format!("cannot open session store: {e}")))?;
+    let proposals = store
+        .list_proposals()
+        .map_err(|e| CmdError::internal(format!("reading proposals: {e}")))?;
+    if index == 0 || index > proposals.len() {
+        return Err(CmdError::not_found(format!(
+            "no adopted volume {index} (session has {} proposal(s))",
+            proposals.len()
+        )));
+    }
+    let p = proposals
+        .get(index - 1)
+        .ok_or_else(|| CmdError::not_found(format!("no proposal {index}")))?;
+    if p.len == 0 {
+        return Err(CmdError::new(
+            crate::exit::Exit::Usage,
+            format!(
+                "proposal {index} ({}) has no adoptable length; adopt its container instead",
+                p.fs
+            ),
+        ));
+    }
+    let original = Resolved::from_source_id(&info.source_id)
+        .ok_or_else(|| CmdError::not_found(format!("cannot reopen source '{}'", info.source_id)))?;
+    let base = original.open()?;
+    let view = OffsetView::new(base, p.start, p.len)
+        .map_err(|e| CmdError::internal(format!("adopted volume window invalid: {e}")))?;
+    Ok(Arc::new(view))
 }
 
 fn map_open_error(bsd: &str, raw_node: &str, err: reclaim_block::BlockError) -> CmdError {

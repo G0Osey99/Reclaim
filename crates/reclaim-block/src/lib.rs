@@ -22,6 +22,7 @@
 mod bad_block;
 mod bitset;
 mod cache;
+pub mod container;
 mod error;
 mod fault;
 mod image_file;
@@ -35,6 +36,7 @@ mod source;
 pub use bad_block::{BadBlockMap, LbaRange};
 pub use bitset::Bitset;
 pub use cache::ReadAheadCache;
+pub use container::{ConcatSource, Container, MappedSource};
 pub use error::BlockError;
 pub use fault::FaultInjector;
 pub use image_file::ImageFile;
@@ -42,6 +44,26 @@ pub use memory::MemorySource;
 pub use offset_view::OffsetView;
 pub use raw_device::RawDevice;
 pub use source::{BlockSource, ReadResult, SectorStatus, SourceId};
+
+use std::path::Path;
+use std::sync::Arc;
+
+/// Open an image path, auto-detecting image-container formats (DMG, VMDK, VDI,
+/// VHD/VHDX, QCOW2, EnCase E01, sparseimage, split sets — docs/plan/04 §5).
+/// Unrecognized files fall back to a raw [`ImageFile`].
+pub fn open_image_auto(path: impl AsRef<Path>) -> Result<Arc<dyn BlockSource>, BlockError> {
+    let path = path.as_ref();
+    if let Some(src) = container::open_container(path)? {
+        return Ok(src);
+    }
+    Ok(Arc::new(ImageFile::open(path)?))
+}
+
+/// The detected container format for `path` (for `reclaim info`).
+#[must_use]
+pub fn detect_container(path: impl AsRef<Path>) -> Container {
+    container::detect(path.as_ref())
+}
 
 /// Size of a read-ahead cache chunk: 1 MiB (docs/plan/03 §2.1).
 pub const CHUNK_SIZE: u64 = 1024 * 1024;

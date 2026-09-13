@@ -36,6 +36,17 @@ pub enum Event {
         /// Offending byte offset.
         lba: u64,
     },
+    /// A lost-structure volume was proposed (docs/plan/07 §2).
+    Volume {
+        /// Volume start byte offset.
+        start: u64,
+        /// Volume length in bytes.
+        len: u64,
+        /// Filesystem kind.
+        fs: String,
+        /// Confidence 0..1.
+        confidence: f32,
+    },
     /// A non-fatal warning.
     Warning {
         /// Message.

@@ -24,4 +24,11 @@ cargo deny check
 step "check-readonly"
 scripts/check-readonly.sh
 
+# Recovery-Mode linkage gate (macOS only): the CLI must link only system libs so
+# it runs from a Recovery Terminal (docs/plan/06 §4). No-op on Linux.
+if [ "$(uname -s)" = "Darwin" ]; then
+    step "check-recovery-libs"
+    scripts/check-recovery-libs.sh
+fi
+
 printf '\n\033[1;32mcargo ci: all gates passed\033[0m\n'

@@ -80,6 +80,9 @@ pub struct ScanReport {
     pub block_size: u32,
     /// Whether the scan reached the end (complete).
     pub complete: bool,
+    /// True if the source device disappeared mid-scan (hot-unplug); the session
+    /// is checkpointed and resumable (docs/plan/07 §4).
+    pub vanished: bool,
 }
 
 enum Msg {
@@ -107,6 +110,7 @@ impl Session {
                 elapsed: 0.0,
                 block_size: bs,
                 complete: true,
+                vanished: false,
             });
         }
         let (resume_from, block_size) = match (cfg.resume, prior) {
@@ -176,6 +180,12 @@ impl Session {
             let ckpt = Duration::from_secs(cfg.checkpoint_secs.max(1));
 
             loop {
+                // Device-disappeared (hot-unplug): stop the carve thread so we
+                // checkpoint and exit resumably instead of reading zeros to EOF
+                // (docs/plan/07 §4).
+                if src.vanished() {
+                    cancel_ref.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
                 match rx.recv_timeout(Duration::from_millis(400)) {
                     Ok(Msg::Found(cf)) => {
                         let cf = *cf;
@@ -293,6 +303,7 @@ impl Session {
                 elapsed,
                 block_size,
                 complete,
+                vanished: src.vanished(),
             })
         })?;
 
