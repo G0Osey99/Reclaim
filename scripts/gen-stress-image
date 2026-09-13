@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""gen-stress-image — the nightly throughput / peak-RSS stress image (docs/plan/09
+§2 "Big" + §7). Builds a *sparse* raw image of `--size` bytes (default 512 GiB,
+so only ~1 GiB is ever written to disk) seeded with `--count` (default 2,000,000)
+small, carver-valid records — rotating PNG / JPEG / TXT — spread evenly across
+the whole logical span. Scanning it exercises two NFR gates:
+
+  * NFR-2 throughput — a full deep pass streams the entire logical span.
+  * NFR-3 memory     — the on-disk (SQLite) result index must keep peak RSS
+                       bounded (<= 2 GB) even at ~2 M results.
+
+The records are the same structurally-valid PNG/JPEG/TXT the golden generator
+uses (scripts/gen-images), so the carver recognises every one. Content is
+irrelevant to this test (it measures speed + memory, not recall), so no
+ground-truth sidecar is written.
+
+Usage:
+  scripts/gen-stress-image                      # 512 GiB / 2,000,000 records
+  scripts/gen-stress-image --size 32GiB --count 200000 --out /tmp/stress.img
+"""
+from __future__ import annotations
+
+import argparse
+import struct
+import sys
+import time
+import zlib
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+SECTOR = 512
+
+
+def parse_size(s: str) -> int:
+    s = s.strip()
+    units = {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4,
+             "KB": 1000, "MB": 1000**2, "GB": 1000**3, "B": 1}
+    for u, m in units.items():
+        if s.endswith(u):
+            return int(float(s[: -len(u)]) * m)
+    return int(s)
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + kind + data
+            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+
+def make_png(size: int, salt: int) -> bytes:
+    w = h = 4
+    raw = bytearray()
+    for _ in range(h):
+        raw.append(0)
+        raw += bytes((salt + i) & 0xFF for i in range(w))
+    idat = zlib.compress(bytes(raw), 6)
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)
+    out = bytearray(b"\x89PNG\r\n\x1a\n")
+    out += _png_chunk(b"IHDR", ihdr)
+    out += _png_chunk(b"IDAT", idat)
+    pad = size - len(out) - 12 - 12
+    if pad > 0:
+        out += _png_chunk(b"rCLm", bytes((salt + i) & 0xFF for i in range(pad)))
+    out += _png_chunk(b"IEND", b"")
+    return bytes(out)
+
+
+def make_jpeg(size: int, salt: int) -> bytes:
+    out = bytearray(b"\xff\xd8")
+    app0 = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"
+    out += b"\xff\xe0" + struct.pack(">H", len(app0) + 2) + app0
+    payload = bytes((salt + i) & 0xFF for i in range(max(0, size - len(out) - 6)))
+    out += b"\xff\xfe" + struct.pack(">H", len(payload) + 2) + payload
+    out += b"\xff\xd9"
+    return bytes(out)
+
+
+def make_txt(size: int, salt: int) -> bytes:
+    base = (f"reclaim stress record {salt} sector cluster inode extent carve "
+            "signature volume checkpoint snapshot bitmap catalog journal\n")
+    b = (base.encode() * (size // len(base) + 1))[:size]
+    return b
+
+
+# PNG and JPEG both carve reliably at sub-KiB sizes (header + footer framing).
+# `make_txt` is kept for reference but excluded from the rotation: a ~448-byte
+# headerless text run does not reliably trip the statistical text validator, so
+# including it would make the recovered count < the record count. Restricting to
+# the two header-framed formats keeps result_count == record_count (the "2 M
+# files" target of docs/plan/09 §2).
+MAKERS = (make_png, make_jpeg)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--size", default="512GiB")
+    ap.add_argument("--count", type=int, default=2_000_000)
+    ap.add_argument("--record", type=int, default=448, help="record bytes (< sector)")
+    ap.add_argument("--out", default=str(REPO / "testdata" / "build" / "stress-512gib.img"))
+    a = ap.parse_args()
+
+    size = parse_size(a.size)
+    count = a.count
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stride = max(SECTOR, (size // count) & ~(SECTOR - 1))
+    span = stride * count
+    if span > size:
+        print(f"error: {count} records * {stride} B stride = {span} > {size}", file=sys.stderr)
+        return 1
+
+    # Pre-build one valid record per family at the requested size.
+    templates = [m(a.record, 0) for m in MAKERS]
+
+    t0 = time.time()
+    with open(out, "wb") as f:
+        f.truncate(size)  # sparse
+        buf = bytearray()
+        FLUSH = 1 << 22  # 4 MiB write batches (each record is seeked-to)
+        # Records are sector-aligned and `stride` apart; write sequentially so
+        # the OS lays the sparse file down in order.
+        for i in range(count):
+            off = i * stride
+            fam = i % len(MAKERS)
+            rec = MAKERS[fam](a.record, i & 0xFFFF)
+            f.seek(off)
+            f.write(rec)
+            if i and i % 200_000 == 0:
+                print(f"  {i:,}/{count:,} records ({100*i//count}%)", flush=True)
+    dt = time.time() - t0
+    import os
+    phys = os.stat(out).st_blocks * 512
+    print(f"built {out}")
+    print(f"  logical size : {size:,} B ({size/1024**3:.0f} GiB)")
+    print(f"  records      : {count:,} (stride {stride:,} B, span {span/1024**3:.1f} GiB)")
+    print(f"  physical used: ~{phys/1024**2:.0f} MiB (sparse)")
+    print(f"  build time   : {dt:.1f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

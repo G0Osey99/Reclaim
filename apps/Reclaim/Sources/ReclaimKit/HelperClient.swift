@@ -27,22 +27,53 @@ public final class HelperClient: ObservableObject {
 
     // MARK: registration
 
-    /// Register the daemon (prompts the user via SMAppService, doc 08 §2.1).
+    /// Register the daemon, then branch on the resulting **status**, not on
+    /// whether `register()` threw (doc 08 §2.1). Per Apple DTS (Forums 707482 /
+    /// 799910): the normal daemon flow is `register()` returns and status becomes
+    /// `.requiresApproval` — the user must then enable it in System Settings →
+    /// General → Login Items & Extensions. A "code 1 / Operation not permitted"
+    /// throw on an *already-registered* daemon is expected on a repeat press, so
+    /// we ignore the throw and read `status`; a throw while status is still
+    /// `.notRegistered`/`.notFound` is a genuine failure (usually a signing or
+    /// bundle-location problem — the app must be signed with a real Apple cert
+    /// and run from /Applications).
     public func install() {
         #if canImport(ServiceManagement)
         let service = SMAppService.daemon(plistName: Self.plistName)
+        var registerError: Error?
         do {
             try service.register()
-            refreshStatus()
         } catch {
-            status = .failed("\(error.localizedDescription)")
+            registerError = error
+        }
+        refreshStatus()
+        switch service.status {
+        case .enabled:
+            break
+        case .requiresApproval:
+            // Registered and waiting for the user — send them to the toggle.
+            openLoginItems()
+        default:
+            let base = registerError.map { "\($0.localizedDescription)" } ?? "registration failed"
+            status = .failed(
+                "\(base). Make sure Reclaim.app is in /Applications and launched "
+                    + "from there, then try again. If it persists, remove any stale "
+                    + "registration (see the app's help) and relaunch.")
         }
         #else
         status = .failed("ServiceManagement unavailable")
         #endif
     }
 
-    /// Unregister the daemon.
+    /// Open System Settings → General → Login Items & Extensions so the user can
+    /// enable the daemon (there is no per-daemon deep link).
+    public func openLoginItems() {
+        #if canImport(ServiceManagement)
+        SMAppService.openSystemSettingsLoginItems()
+        #endif
+    }
+
+    /// Unregister the daemon (clears a stale registration).
     public func uninstall() {
         #if canImport(ServiceManagement)
         let service = SMAppService.daemon(plistName: Self.plistName)
@@ -51,7 +82,8 @@ public final class HelperClient: ObservableObject {
         #endif
     }
 
-    /// Refresh `status` from `SMAppService`.
+    /// Refresh `status` from `SMAppService`. Preserves a prior `.failed` only
+    /// until the real status is known.
     public func refreshStatus() {
         #if canImport(ServiceManagement)
         let service = SMAppService.daemon(plistName: Self.plistName)
@@ -64,6 +96,20 @@ public final class HelperClient: ObservableObject {
         #endif
     }
 
+    /// Re-read the helper status and, when it is enabled, re-probe Full Disk
+    /// Access. Called on a timer and whenever the app regains focus during
+    /// onboarding — SMAppService has no status-change notification, so polling is
+    /// the documented approach (Apple DTS, FB17671405).
+    public func refresh(bootWholeDisk: String?) async {
+        refreshStatus()
+        if status == .enabled, !fullDiskAccess, let boot = bootWholeDisk {
+            await probeFullDiskAccess(bootWholeDisk: boot)
+        }
+    }
+
+    /// True once both gates are satisfied.
+    public var isReady: Bool { status == .enabled && fullDiskAccess }
+
     // MARK: XPC
 
     /// Pin the connection's code-signing requirement (both-ways check, doc 03 §7).
@@ -75,7 +121,7 @@ public final class HelperClient: ObservableObject {
     private func connection() -> NSXPCConnection {
         let c = NSXPCConnection(machServiceName: reclaimHelperMachServiceName, options: .privileged)
         c.remoteObjectInterface = NSXPCInterface(with: ReclaimHelperXPC.self)
-        if let team = ProcessInfo.processInfo.environment["RECLAIM_TEAM_ID"], !team.isEmpty {
+        if let team = reclaimConfiguredTeamID() {
             if #available(macOS 13.0, *) {
                 setRequirement(c, reclaimCodeRequirement(teamID: team))
             }

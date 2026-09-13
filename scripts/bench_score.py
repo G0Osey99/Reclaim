@@ -74,6 +74,39 @@ def main() -> int:
 
     rec_set = set(rec_hashes)
 
+    # Precision per docs/plan/09 §3: precision = (hash_matches + valid_unknown) /
+    # total_results, where a false positive is a result that matches no expected
+    # file AND fails validation. `precision_exact` (below) is the stricter
+    # matches-only ratio; it under-reports precision because a metadata engine
+    # legitimately recovers real files that ground truth does not track (macOS
+    # `._*` AppleDouble companions, `.fseventsd/*`), which are valid, not junk.
+    # The recover manifest carries each result's `validity`; use it when present.
+    precision_doc = None
+    false_positive_rate = None
+    man_path = os.path.join(rec_dir, "manifest.json")
+    if os.path.exists(man_path):
+        try:
+            man = json.load(open(man_path))
+            items = man["files"] if isinstance(man, dict) else man
+            match = valid_unknown = false_pos = 0
+            for it in items:
+                rp = it.get("path", "")
+                h = rec_by_path.get(rp)
+                if h is None:
+                    continue
+                if h in expected:
+                    match += 1
+                elif it.get("validity") == "full":
+                    valid_unknown += 1
+                else:
+                    false_pos += 1
+            tot = match + valid_unknown + false_pos
+            if tot:
+                precision_doc = round((match + valid_unknown) / tot, 4)
+                false_positive_rate = round(false_pos / tot, 4)
+        except (OSError, ValueError, KeyError):
+            pass
+
     # Content recall (any name).
     matched = {h for h in expected if h in rec_set}
     hit_by_fam = {}
@@ -99,11 +132,27 @@ def main() -> int:
     n_expected = len(expected)
     n_rec = len(rec_hashes)
     n_deleted = len(deleted)
+    # partial_credit (docs/plan/09 §3): Σ(longest correct prefix / size) over the
+    # expected set. Round 1 carves whole contiguous files only (build guide §3.6):
+    # a recovered file is either an exact-hash match (credit 1.0) or its blocks
+    # were overwritten/TRIM'd and nothing is present to score (credit 0.0). The
+    # ground-truth sidecars retain only SHA-256, not the original bytes (privacy —
+    # no corpus bytes in the repo), so a genuinely truncated survivor cannot be
+    # prefix-scored; on this whole-file corpus there are none, so partial_credit
+    # equals content_recall exactly. Reported so a future fragment-reassembly
+    # engine (round 2) can raise it above content_recall.
+    content_recall = round(len(matched) / n_expected, 4) if n_expected else 0.0
     out = {
         "expected": n_expected,
         "recovered_files": n_rec,
         "content_matches": len(matched),
-        "content_recall": round(len(matched) / n_expected, 4) if n_expected else 0.0,
+        "content_recall": content_recall,
+        "partial_credit": content_recall,
+        # precision (docs/plan/09 §3): matches + valid_unknown / total. Falls back
+        # to the matches-only ratio when no manifest is present (e.g. PhotoRec).
+        "precision": precision_doc if precision_doc is not None
+        else (round(len(matched) / n_rec, 4) if n_rec else 0.0),
+        "false_positive_rate": false_positive_rate,
         "precision_exact": round(len(matched) / n_rec, 4) if n_rec else 0.0,
         "named_expected": n_deleted,
         "named_correct": named_correct,

@@ -236,15 +236,19 @@ impl ExFat {
         }
 
         // Follow the FAT. For a deleted file the entries are usually freed (0);
-        // detect that and fall back to a contiguous assumption (Suspect).
+        // detect that and fall back to a contiguous assumption (Suspect). A file
+        // that fits in a single cluster (`need_clusters <= 1`) occupies exactly
+        // its first cluster — contiguity is a certainty, not an assumption, so it
+        // stays `Full` even when the chain is gone (docs/plan/04 §3.4).
+        let assumed = need_clusters > 1;
         let clusters = self.chain(first_cluster, need_clusters.saturating_add(2));
         if clusters.is_empty() || (deleted && (clusters.len() as u64) < need_clusters) {
-            return contiguous(true);
+            return contiguous(assumed);
         }
         // Coalesce consecutive clusters into extents.
         let extents = coalesce(&clusters, self, data_len);
         if extents.is_empty() {
-            return contiguous(true);
+            return contiguous(assumed);
         }
         (extents, false)
     }

@@ -6,15 +6,33 @@ public let reclaimHelperMachServiceName = "com.reclaim.helper"
 
 /// The code-signing requirement each side pins on the XPC connection so the app
 /// only talks to *its* helper and the helper only serves *its* app (doc 03 §7,
-/// "Code requirement checks both ways"). For a Developer ID build set
-/// `RECLAIM_TEAM_ID`; the ad-hoc dev build falls back to a same-team check that
-/// is documented as not enforceable without a real team (see phase-5 log).
+/// "Code requirement checks both ways"). The team ID is the cert's OU — the same
+/// value for a free "Apple Development" personal team and a paid Developer ID.
 public func reclaimCodeRequirement(teamID: String?) -> String {
     if let team = teamID, !team.isEmpty {
         return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
     }
     // Ad-hoc / development: no team to pin. The caller decides whether to enforce.
     return "anchor apple generic"
+}
+
+/// The team ID to pin, resolved at runtime: the `RECLAIM_TEAM_ID` env override
+/// first (dev loop), then the `ReclaimTeamID` key baked into the bundle's
+/// Info.plist by `scripts/build-app.sh` at signing time. A launched `.app` has no
+/// environment, so the Info.plist value is what makes the both-ways check work
+/// for the shipped bundle. `nil` ⇒ unsigned/ad-hoc: the caller does not pin.
+public func reclaimConfiguredTeamID() -> String? {
+    if let t = ProcessInfo.processInfo.environment["RECLAIM_TEAM_ID"], !t.isEmpty {
+        return t
+    }
+    // Bundle.main resolves to the enclosing .app for both the app executable and
+    // the daemon launched from Contents/MacOS, so both read the app's Info.plist.
+    if let t = Bundle.main.object(forInfoDictionaryKey: "ReclaimTeamID") as? String,
+        !t.isEmpty
+    {
+        return t
+    }
+    return nil
 }
 
 /// The XPC surface the helper exposes (doc 08 §5 / doc 03 §7). Deliberately

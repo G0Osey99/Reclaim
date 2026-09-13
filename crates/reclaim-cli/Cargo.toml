@@ -13,6 +13,14 @@ publish = false
 name = "reclaim"
 path = "src/main.rs"
 
+[features]
+# `docgen` compiles the man-page / completion / cli.md generator into the binary
+# (invoked via RECLAIM_GEN_DOCS=<dir>). It is NOT part of the shipped binary:
+# scripts/gen-cli-docs.sh builds with --features docgen, the release/Recovery
+# builds do not. clap_mangen/clap_complete are pure-Rust (no dylib), so even the
+# feature build keeps `otool -L` system-libs-only.
+docgen = ["dep:clap_mangen", "dep:clap_complete"]
+
 [lints]
 workspace = true
 
@@ -31,6 +39,9 @@ serde_json.workspace = true
 anyhow.workspace = true
 libc.workspace = true
 blake3.workspace = true
+# Doc generation only (feature `docgen`); both MIT/Apache-2.0, pure Rust.
+clap_mangen = { version = "0.2", optional = true }
+clap_complete = { version = "4", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -399,44 +399,47 @@ impl Store {
     /// so it collapses into the named file and is hidden from default results.
     /// Returns the number of carved rows merged.
     pub fn merge_carved_into_entries(&mut self) -> Result<u64, SessionError> {
-        // Collect every named entry extent (offset,len).
-        let mut ranges: std::collections::HashSet<(i64, i64)> = std::collections::HashSet::new();
+        // Collect every named entry's extent START offset. A physical byte hosts
+        // at most one file's beginning, so a carve result that begins at the same
+        // offset as a named file *is* that file — whether or not the carved length
+        // matches. Matching on the start offset (not the exact (offset,len) tuple)
+        // therefore also collapses a carve that over-runs the named file's true
+        // end into a `Truncated` duplicate (the metadata engine has the
+        // authoritative length). docs/plan/03 §5 step 6, FR-SCAN-6.
+        let mut starts: std::collections::HashSet<i64> = std::collections::HashSet::new();
         {
             let mut stmt = self
                 .conn
-                .prepare("SELECT offset, len, extents FROM carved WHERE engine != 'carve'")?;
+                .prepare("SELECT offset, extents FROM carved WHERE engine != 'carve'")?;
             let mut rows = stmt.query([])?;
             while let Some(r) = rows.next()? {
                 let off: i64 = r.get(0)?;
-                let len: i64 = r.get(1)?;
-                ranges.insert((off, len));
-                let ex: Option<String> = r.get(2)?;
+                starts.insert(off);
+                let ex: Option<String> = r.get(1)?;
                 if let Some(j) = ex {
                     if let Ok(v) = serde_json::from_str::<Vec<(u64, u64)>>(&j) {
-                        for (o, l) in v {
-                            ranges.insert((o as i64, l as i64));
+                        for (o, _l) in v {
+                            starts.insert(o as i64);
                         }
                     }
                 }
             }
         }
-        if ranges.is_empty() {
+        if starts.is_empty() {
             return Ok(0);
         }
         let tx = self.conn.transaction()?;
         let mut merged = 0u64;
         {
-            let mut sel = tx.prepare(
-                "SELECT id, offset, len FROM carved WHERE engine = 'carve' AND merged = 0",
-            )?;
+            let mut sel =
+                tx.prepare("SELECT id, offset FROM carved WHERE engine = 'carve' AND merged = 0")?;
             let mut upd = tx.prepare("UPDATE carved SET merged = 1 WHERE id = ?1")?;
             let mut rows = sel.query([])?;
             let mut to_merge: Vec<String> = Vec::new();
             while let Some(r) = rows.next()? {
                 let id: String = r.get(0)?;
                 let off: i64 = r.get(1)?;
-                let len: i64 = r.get(2)?;
-                if ranges.contains(&(off, len)) {
+                if starts.contains(&off) {
                     to_merge.push(id);
                 }
             }

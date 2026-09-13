@@ -14,9 +14,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.5.0-beta</string>
+    <string>1.0.0</string>
     <key>CFBundleVersion</key>
-    <string>0.5.0</string>
+    <string>1.0.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
@@ -25,6 +25,16 @@
     <string>public.app-category.utilities</string>
     <key>NSHumanReadableCopyright</key>
     <string>Reclaim contributors. Apache-2.0.</string>
+    <!-- Sparkle auto-update (docs/sparkle.md). The feed is served from GitHub
+         Releases; SUPublicEDKey is the base64 public half of the EdDSA key Ryker
+         generates with Sparkle's generate_keys (build guide Part 5.3) — replace
+         the placeholder before shipping an update-enabled build. -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/G0Osey99/reclaim/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>REPLACE_WITH_SPARKLE_ED_PUBLIC_KEY</string>
+    <key>SUEnableInstallerLauncherService</key>
+    <false/>
     <!-- The privileged helper this app registers via SMAppService.daemon. -->
     <key>SMPrivilegedExecutables</key>
     <dict>
