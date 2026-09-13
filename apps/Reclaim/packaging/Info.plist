@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Reclaim</string>
+    <key>CFBundleDisplayName</key>
+    <string>Reclaim</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.reclaim.app</string>
+    <key>CFBundleExecutable</key>
+    <string>Reclaim</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.5.0-beta</string>
+    <key>CFBundleVersion</key>
+    <string>0.5.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Reclaim contributors. Apache-2.0.</string>
+    <!-- The privileged helper this app registers via SMAppService.daemon. -->
+    <key>SMPrivilegedExecutables</key>
+    <dict>
+        <key>com.reclaim.helper</key>
+        <string>anchor apple generic</string>
+    </dict>
+</dict>
+</plist>

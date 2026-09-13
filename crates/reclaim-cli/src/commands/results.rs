@@ -49,6 +49,7 @@ pub fn filter_from(args: &ResultsArgs) -> Result<QueryFilter, CmdError> {
         ids: None,
         sort,
         limit: args.limit,
+        offset: None,
     })
 }
 

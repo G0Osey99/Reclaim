@@ -14,12 +14,14 @@
 pub mod events;
 pub mod id;
 pub mod meta;
+pub mod recover;
 pub mod scan;
 pub mod store;
 pub mod structs;
 
 pub use events::Event;
 pub use meta::MetaReport;
+pub use recover::{Collision, RecoverOpts, RecoverSummary, RecoveredFile};
 pub use scan::{ScanConfig, ScanReport};
 pub use store::{CarvedRecord, EntryRow, ProposalRow, QueryFilter, Sort, Store};
 
