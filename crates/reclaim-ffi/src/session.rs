@@ -346,6 +346,9 @@ impl Session {
 
     /// Resume an interrupted scan on a fresh background thread.
     pub fn resume_scan(&self, opts: ScanOptions, sink: Box<dyn EventSink>) -> Result<(), RcError> {
+        if self.is_scanning() {
+            return Err(RcError::usage("a scan is already running on this session"));
+        }
         let spec = self
             .source_spec
             .lock()
@@ -390,7 +393,27 @@ impl Session {
         let dir = self.dir.clone();
         let handle = std::thread::Builder::new()
             .name("reclaim-scan".into())
-            .spawn(move || run_pipeline(&dir, &src, &info, &opts, cancel, sink.as_ref()))
+            .spawn(move || {
+                // A panic or error inside the pipeline must still tell the GUI
+                // the scan is over, or it spins on a progress bar forever.
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run_pipeline(&dir, &src, &info, &opts, cancel, sink.as_ref())
+                }));
+                let err = match res {
+                    Ok(Ok(summary)) => return Ok(summary),
+                    Ok(Err(e)) => e,
+                    Err(_) => RcError::internal("scan thread panicked"),
+                };
+                sink.on_event(RcEvent::Warning {
+                    msg: format!("scan stopped: {err}"),
+                });
+                sink.on_event(RcEvent::Done {
+                    found: 0,
+                    elapsed: 0.0,
+                    interrupted: true,
+                });
+                Err(err)
+            })
             .map_err(|e| RcError::internal(format!("spawn scan thread: {e}")))?;
         if let Ok(mut g) = self.scan.lock() {
             *g = Some(handle);

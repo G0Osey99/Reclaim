@@ -26,6 +26,7 @@ use reclaim_fs_core::{
     Bitmap, Entry, EntryKind, EntrySink, EntryState, Extent, FileSystem, FsError, Probe, WalkOpts,
     WalkStats,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// exFAT directory entry type codes (with the 0x80 in-use bit set).
@@ -35,6 +36,9 @@ const TYPE_LABEL: u8 = 0x83;
 const TYPE_FILE: u8 = 0x85;
 const TYPE_STREAM: u8 = 0xC0;
 const TYPE_NAME: u8 = 0xC1;
+
+/// Cap on a single directory read (DoS guard on crafted chains).
+const MAX_DIR_BYTES: u64 = 32 * 1024 * 1024;
 
 const ATTR_DIRECTORY: u16 = 0x0010;
 const FLAG_NO_FAT_CHAIN: u8 = 0x02;
@@ -94,7 +98,7 @@ pub fn probe(src: &Arc<dyn BlockSource>) -> Option<Probe> {
     }
     let bps_shift = boot.get(108).copied().unwrap_or(0);
     let spc_shift = boot.get(109).copied().unwrap_or(0);
-    if !(9..=12).contains(&bps_shift) || spc_shift > 25 {
+    if !(9..=12).contains(&bps_shift) || u32::from(bps_shift) + u32::from(spc_shift) > 25 {
         return None;
     }
     let bytes_per_sector = 1u64 << bps_shift;
@@ -118,7 +122,7 @@ pub fn open(src: Arc<dyn BlockSource>, _probe: Probe) -> Result<ExFat, FsError> 
         .ok_or_else(|| FsError::NotThisFs("no EXFAT boot signature (main or backup)".into()))?;
     let bps_shift = boot.get(108).copied().unwrap_or(0);
     let spc_shift = boot.get(109).copied().unwrap_or(0);
-    if !(9..=12).contains(&bps_shift) || spc_shift > 25 {
+    if !(9..=12).contains(&bps_shift) || u32::from(bps_shift) + u32::from(spc_shift) > 25 {
         return Err(FsError::Corrupt(
             "implausible exFAT sector/cluster shift".into(),
         ));
@@ -165,7 +169,10 @@ impl ExFat {
         if cluster < 2 || cluster >= self.cluster_count.saturating_add(2) {
             return None;
         }
-        Some(self.cluster_heap_offset + u64::from(cluster - 2) * self.cluster_size)
+        Some(
+            self.cluster_heap_offset
+                .saturating_add(u64::from(cluster - 2).saturating_mul(self.cluster_size)),
+        )
     }
 
     /// Read the FAT entry for `cluster` (32-bit exFAT FAT).
@@ -180,14 +187,15 @@ impl ExFat {
     fn chain(&self, first: u32, max_clusters: u64) -> Vec<u32> {
         let mut out = Vec::new();
         let mut cur = first;
-        let cap = max_clusters.min(u64::from(self.cluster_count) + 2).max(1);
+        let limit = self.cluster_count.saturating_add(2);
+        let cap = max_clusters.min(u64::from(limit)).max(1);
         let mut steps = 0u64;
-        while cur >= 2 && cur < self.cluster_count + 2 && steps < cap {
+        while cur >= 2 && cur < limit && steps < cap {
             out.push(cur);
             steps += 1;
             let next = self.fat_next(cur);
             // exFAT end-of-chain is 0xFFFFFFFF; 0 / bad / out-of-range stop.
-            if next == 0xFFFF_FFFF || next < 2 || next >= self.cluster_count + 2 {
+            if next == 0xFFFF_FFFF || next < 2 || next >= limit {
                 break;
             }
             if next == cur {
@@ -302,7 +310,8 @@ impl ExFat {
 
     /// Read an entire directory (following its cluster chain) into one buffer.
     fn read_directory(&self, first_cluster: u32) -> Option<Vec<u8>> {
-        let clusters = self.chain(first_cluster, 1 << 20);
+        let max_clusters = (MAX_DIR_BYTES / self.cluster_size.max(1)).saturating_add(1);
+        let clusters = self.chain(first_cluster, max_clusters.min(1 << 20));
         if clusters.is_empty() {
             return None;
         }
@@ -311,11 +320,11 @@ impl ExFat {
             let Some(off) = self.cluster_offset(c) else {
                 break;
             };
-            let chunk = read(&self.src, off, self.cluster_size as usize);
-            buf.extend_from_slice(&chunk);
-            if buf.len() as u64 > 256 * 1024 * 1024 {
+            if buf.len() as u64 >= MAX_DIR_BYTES {
                 break; // DoS guard.
             }
+            let chunk = read(&self.src, off, self.cluster_size as usize);
+            buf.extend_from_slice(&chunk);
         }
         Some(buf)
     }
@@ -331,13 +340,19 @@ impl ExFat {
         opts: &WalkOpts,
         bitmap: Option<&Bitmap>,
         stats: &mut WalkStats,
+        visited: &mut HashSet<u32>,
     ) {
         if depth > 64 || stats.emitted as usize >= opts.max_entries {
+            return;
+        }
+        if !visited.insert(first_cluster) {
             return;
         }
         let Some(dir) = self.read_directory(first_cluster) else {
             return;
         };
+        // Subdirectories to descend into once this directory's buffer is dropped.
+        let mut subdirs: Vec<(u32, String)> = Vec::new();
         let mut i = 0usize;
         while i + 32 <= dir.len() {
             if stats.emitted as usize >= opts.max_entries {
@@ -399,10 +414,18 @@ impl ExFat {
                         e.confidence = if self.checksum_ok { 0.95 } else { 0.85 };
                         emit(sink, stats, e);
                     }
-                    // Recurse into live directories (deleted subdir chains are
-                    // unreliable; still attempt if it has a first cluster).
-                    if first >= 2 {
-                        self.walk_dir(first, &child_path, depth + 1, sink, opts, bitmap, stats);
+                    // Recurse into live directories; a deleted subdirectory is
+                    // only followed while its first cluster is still free (its
+                    // chain is unreliable once reused). Without a bitmap, attempt it.
+                    let descend = in_use
+                        || bitmap
+                            .and_then(|b| {
+                                self.cluster_offset(first)
+                                    .map(|o| !b.is_offset_allocated(o))
+                            })
+                            .unwrap_or(true);
+                    if first >= 2 && descend {
+                        subdirs.push((first, child_path));
                     }
                 } else if include {
                     let deleted = !in_use;
@@ -430,6 +453,19 @@ impl ExFat {
                 continue;
             }
             i += 32;
+        }
+        drop(dir);
+        for (first, child_path) in subdirs {
+            self.walk_dir(
+                first,
+                &child_path,
+                depth + 1,
+                sink,
+                opts,
+                bitmap,
+                stats,
+                visited,
+            );
         }
     }
 }
@@ -510,6 +546,7 @@ impl FileSystem for ExFat {
         let _upcase = self.has_upcase();
         let bitmap = self.load_bitmap();
         let mut stats = WalkStats::default();
+        let mut visited = HashSet::new();
         self.walk_dir(
             self.root_dir_cluster,
             "",
@@ -518,6 +555,7 @@ impl FileSystem for ExFat {
             opts,
             bitmap.as_ref(),
             &mut stats,
+            &mut visited,
         );
         let _ = (
             self.fat_length,
@@ -615,17 +653,17 @@ fn read_name(dir: &[u8], mut off: usize, name_entries: usize, name_len: usize) -
 fn read_volume_label(src: &Arc<dyn BlockSource>, boot: &[u8]) -> Option<String> {
     let bps_shift = boot.get(108).copied().unwrap_or(0);
     let spc_shift = boot.get(109).copied().unwrap_or(0);
-    if bps_shift == 0 {
+    if !(9..=12).contains(&bps_shift) || u32::from(bps_shift) + u32::from(spc_shift) > 25 {
         return None;
     }
     let bytes_per_sector = 1u64 << bps_shift;
     let cluster_size = bytes_per_sector << spc_shift;
-    let cluster_heap_offset = le_u32(boot, 88) as u64 * bytes_per_sector;
+    let cluster_heap_offset = (le_u32(boot, 88) as u64).saturating_mul(bytes_per_sector);
     let root = le_u32(boot, 96);
     if root < 2 || cluster_size == 0 {
         return None;
     }
-    let off = cluster_heap_offset + u64::from(root - 2) * cluster_size;
+    let off = cluster_heap_offset.saturating_add(u64::from(root - 2).saturating_mul(cluster_size));
     let dir = read(src, off, cluster_size.min(4096) as usize);
     let mut i = 0usize;
     while i + 32 <= dir.len() {

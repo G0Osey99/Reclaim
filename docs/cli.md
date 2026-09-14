@@ -603,6 +603,9 @@ Options:
       --resume
           Resume from the map
 
+      --allow-same-device-i-accept-data-loss
+          Override the same-device destination refusal (data-loss risk)
+
   -h, --help
           Print help
 ```

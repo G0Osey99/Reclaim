@@ -13,6 +13,9 @@ use crate::sb::Superblock;
 use reclaim_block::BlockSource;
 use std::sync::Arc;
 
+/// Cap on entries accumulated from one directory (DoS guard on crafted chains).
+const MAX_DIR_ENTRIES: usize = 2_000_000;
+
 /// One directory record (live or recovered-deleted).
 #[derive(Clone, Debug)]
 pub struct DirEntry {
@@ -31,6 +34,9 @@ pub fn read_dir(src: &Arc<dyn BlockSource>, sb: &Superblock, dir: &Inode) -> Vec
         let mut off = ext.offset;
         let end = ext.offset.saturating_add(ext.len);
         while off < end {
+            if out.len() >= MAX_DIR_ENTRIES {
+                return out;
+            }
             let block = read(src, off, bs);
             parse_dir_block(sb, &block, &mut out);
             off = off.saturating_add(sb.block_size);

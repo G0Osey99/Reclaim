@@ -85,6 +85,11 @@ struct SourceDetailView: View {
     private var planColumn: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let e = scan.errorMessage {
+                    Label(e, systemImage: "xmark.octagon")
+                        .foregroundStyle(.red).font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 header
                 if let p = probe {
                     if !p.partitions.isEmpty {
@@ -223,21 +228,20 @@ struct SourceDetailView: View {
     private func startScan() {
         let opts = plan.options
         Task {
-            let spec = await resolveSourceSpec()
+            let dev = await resolveDevice()
             await MainActor.run {
-                scan.start(source: spec, sessionDir: nil, opts: opts)
-                scanning = true
+                // The controller keeps `dev` alive for the session (the core
+                // re-dups the fd for preview/recover). A failed start stays on
+                // the plan and shows `scan.errorMessage`.
+                scan.start(source: dev?.sourceSpec ?? bsd, device: dev, sessionDir: nil, opts: opts)
+                scanning = scan.session != nil
             }
         }
     }
 
-    /// Prefer a helper-provided fd for a device (doc 03 §7); fall back to the BSD.
-    private func resolveSourceSpec() async -> String {
-        if model.helper.status == .enabled {
-            if let dev = try? await model.helper.openDevice(bsd: bsd) {
-                return dev.sourceSpec
-            }
-        }
-        return bsd
+    /// Prefer a helper-provided fd for a device (doc 03 §7); nil ⇒ use the BSD.
+    private func resolveDevice() async -> DeviceFD? {
+        guard model.helper.status == .enabled else { return nil }
+        return try? await model.helper.openDevice(bsd: bsd)
     }
 }

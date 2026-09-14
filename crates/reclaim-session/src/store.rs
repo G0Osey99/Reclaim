@@ -274,8 +274,8 @@ impl Store {
             );
             "#,
         )?;
-        // Migrate Phase-1 sessions that predate the named-entry columns; each
-        // ALTER is ignored if the column already exists.
+        // Migrate Phase-1 sessions that predate the named-entry columns; an
+        // ALTER is ignored only if the column already exists.
         for stmt in [
             "ALTER TABLE carved ADD COLUMN path TEXT",
             "ALTER TABLE carved ADD COLUMN state TEXT",
@@ -283,7 +283,11 @@ impl Store {
             "ALTER TABLE carved ADD COLUMN extents TEXT",
             "ALTER TABLE carved ADD COLUMN merged INTEGER DEFAULT 0",
         ] {
-            let _ = self.conn.execute(stmt, []);
+            if let Err(e) = self.conn.execute(stmt, []) {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(e.into());
+                }
+            }
         }
         Ok(())
     }
@@ -595,6 +599,27 @@ impl Store {
         if f.ids.as_ref().is_some_and(|v| v.is_empty()) {
             return Ok(Vec::new());
         }
+        // SQLite caps bound parameters (~32k): chunk large id sets, then
+        // re-apply the sort and paging over the concatenation.
+        if let Some(ids) = f.ids.as_ref().filter(|v| v.len() > IDS_CHUNK) {
+            let mut all = Vec::new();
+            for chunk in ids.chunks(IDS_CHUNK) {
+                let sub = QueryFilter {
+                    ids: Some(chunk.to_vec()),
+                    limit: None,
+                    offset: None,
+                    ..f.clone()
+                };
+                all.extend(self.query(&sub)?);
+            }
+            sort_records(&mut all, f.sort.unwrap_or(Sort::Offset));
+            let offset = f.offset.unwrap_or(0).min(all.len());
+            all.drain(..offset);
+            if let Some(lim) = f.limit {
+                all.truncate(lim);
+            }
+            return Ok(all);
+        }
         let (where_sql, args) = build_where(f);
         let mut sql = String::from(SELECT_CARVED);
         sql.push_str(&where_sql);
@@ -639,6 +664,17 @@ impl Store {
     pub fn count_matching(&self, f: &QueryFilter) -> Result<u64, SessionError> {
         if f.ids.as_ref().is_some_and(|v| v.is_empty()) {
             return Ok(0);
+        }
+        if let Some(ids) = f.ids.as_ref().filter(|v| v.len() > IDS_CHUNK) {
+            let mut n = 0u64;
+            for chunk in ids.chunks(IDS_CHUNK) {
+                let sub = QueryFilter {
+                    ids: Some(chunk.to_vec()),
+                    ..f.clone()
+                };
+                n = n.saturating_add(self.count_matching(&sub)?);
+            }
+            return Ok(n);
         }
         let (where_sql, args) = build_where(f);
         let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
@@ -760,6 +796,22 @@ fn build_where(f: &QueryFilter) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>
     (where_sql, args)
 }
 
+/// Largest explicit-id set bound into a single `id IN (?..)` statement.
+const IDS_CHUNK: usize = 900;
+
+/// Order records the way the SQL `ORDER BY` for `sort` would.
+fn sort_records(recs: &mut [CarvedRecord], sort: Sort) {
+    match sort {
+        Sort::Offset => recs.sort_by_key(|r| r.offset),
+        Sort::Size => recs.sort_by_key(|a| std::cmp::Reverse(a.len)),
+        Sort::Date => recs.sort_by(|a, b| a.date.cmp(&b.date)),
+        Sort::Score => recs.sort_by_key(|a| std::cmp::Reverse(a.score)),
+        Sort::Path => {
+            recs.sort_by(|a, b| (&a.family, &a.date, a.offset).cmp(&(&b.family, &b.date, b.offset)))
+        }
+    }
+}
+
 const SELECT_CARVED: &str = "SELECT id,source_id,engine,offset,len,format,family,ext,validity,score,block_aligned,name,date,model,thumb_offset,thumb_len,path,state,kind,extents,merged FROM carved";
 
 fn row_to_record(r: &rusqlite::Row) -> Result<CarvedRecord, SessionError> {
@@ -863,6 +915,39 @@ mod tests {
             })
             .unwrap();
         assert_eq!(full.len(), 1);
+    }
+
+    #[test]
+    fn query_chunks_large_id_sets() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Store::open(&dir.path().join("s.sqlite")).unwrap();
+        let batch: Vec<CarvedFile> = (0..50u64)
+            .map(|i| cf(4096 * (i + 1), 100, "image", "png", Validity::Full, 90))
+            .collect();
+        let real = s.insert_carved("src", "carve", &batch).unwrap();
+        // 40k ids, mostly bogus, with the real ones scattered in.
+        let mut ids: Vec<String> = (0..40_000u32).map(|i| format!("bogus-{i}")).collect();
+        for (i, id) in real.iter().enumerate() {
+            ids[i * 700] = id.clone();
+        }
+        let f = QueryFilter {
+            ids: Some(ids.clone()),
+            ..Default::default()
+        };
+        let got = s.query(&f).unwrap();
+        assert_eq!(got.len(), 50);
+        assert!(got.windows(2).all(|w| w[0].offset <= w[1].offset));
+        assert_eq!(s.count_matching(&f).unwrap(), 50);
+        let paged = s
+            .query(&QueryFilter {
+                ids: Some(ids),
+                offset: Some(10),
+                limit: Some(5),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(paged.len(), 5);
+        assert_eq!(paged[0].offset, 4096 * 11);
     }
 
     #[test]

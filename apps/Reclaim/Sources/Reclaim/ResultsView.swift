@@ -51,8 +51,8 @@ struct ScanResultsView: View {
     // Live results: reload periodically while scanning, then once at the end.
     private func livePoll() async {
         results.reload()
-        while scan.isScanning {
-            try? await Task.sleep(nanoseconds: 800_000_000)
+        while scan.isScanning, !Task.isCancelled {
+            do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
             results.reload()
         }
         results.reload()

@@ -212,6 +212,9 @@ fn exfat(src: &Arc<dyn BlockSource>, start: u64) -> Vec<ProposedVolume> {
         return Vec::new();
     }
     let volume_length = le_u64(&b, 72);
+    if volume_length > (u64::MAX >> bps_shift) {
+        return Vec::new(); // the shift would drop high bits
+    }
     let len = volume_length << bps_shift;
     if !plausible_len(src, start, len) {
         return Vec::new();

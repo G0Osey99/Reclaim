@@ -21,7 +21,7 @@ pub mod structs;
 
 pub use events::Event;
 pub use meta::MetaReport;
-pub use recover::{Collision, RecoverOpts, RecoverSummary, RecoveredFile};
+pub use recover::{safe_rel_path, Collision, RecoverOpts, RecoverSummary, RecoveredFile};
 pub use scan::{ScanConfig, ScanReport};
 pub use store::{CarvedRecord, EntryRow, ProposalRow, QueryFilter, Sort, Store};
 

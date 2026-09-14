@@ -53,6 +53,11 @@ fn open_sparse(
     if grain_size == 0 || num_gtes_per_gt == 0 {
         return Err(BlockError::Container("vmdk: zero grain geometry".into()));
     }
+    // Grains are normally 128 sectors; anything past 1 << 20 sectors (512 MiB)
+    // is hostile geometry.
+    if grain_size > 1 << 20 {
+        return Err(BlockError::Container("vmdk: implausible grainSize".into()));
+    }
     // Compressed grains (streamOptimized) use bit 16 of flags + grain markers,
     // which need a different walk; not supported in round 1.
     let compressed = flags & 0x1_0000 != 0;
@@ -83,7 +88,10 @@ fn open_sparse(
     for g in 0..total_grains {
         let gt_index = g / grains_per_gt;
         let gt_ent = g % grains_per_gt;
-        let this_out = core::cmp::min(grain_bytes, out_len.saturating_sub(g * grain_bytes));
+        let this_out = core::cmp::min(
+            grain_bytes,
+            out_len.saturating_sub(g.saturating_mul(grain_bytes)),
+        );
         if this_out == 0 {
             break;
         }
@@ -170,7 +178,7 @@ fn open_descriptor(
                 if fname.is_empty() {
                     continue;
                 }
-                let sub = dir.join(fname);
+                let sub = dir.join(safe_extent_name(fname)?);
                 let subimg = ImageFile::open(&sub)?;
                 let sub_arc: Arc<dyn BlockSource> = Arc::new(subimg);
                 let view = OffsetView::new(sub_arc, off_sectors.saturating_mul(SECTOR), bytes)?;
@@ -181,7 +189,7 @@ fn open_descriptor(
                 if fname.is_empty() {
                     continue;
                 }
-                let sub = dir.join(fname);
+                let sub = dir.join(safe_extent_name(fname)?);
                 let sub_backing: Arc<dyn BlockSource> = Arc::new(ImageFile::open(&sub)?);
                 parts.push(Arc::new(open_sparse(&sub, &sub_backing)?));
             }
@@ -201,4 +209,35 @@ fn open_descriptor(
     }
     let id = SourceId::new(format!("vmdk-flat:{}:{}", path.display(), parts.len()));
     Ok(Arc::new(ConcatSource::new(parts, id)))
+}
+
+/// Extent file names must be plain relative names: an absolute path or a `..`
+/// component in a descriptor would let a crafted image open files outside its
+/// own directory.
+fn safe_extent_name(fname: &str) -> Result<&Path, BlockError> {
+    let p = Path::new(fname);
+    let plain = !p.is_absolute()
+        && p.components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if plain {
+        Ok(p)
+    } else {
+        Err(BlockError::Container(format!(
+            "vmdk: unsafe extent path {fname:?}"
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extent_names_are_confined() {
+        assert!(safe_extent_name("disk-flat.vmdk").is_ok());
+        assert!(safe_extent_name("sub/disk-s001.vmdk").is_ok());
+        assert!(safe_extent_name("/etc/passwd").is_err());
+        assert!(safe_extent_name("../outside.vmdk").is_err());
+        assert!(safe_extent_name("a/../../b.vmdk").is_err());
+    }
 }

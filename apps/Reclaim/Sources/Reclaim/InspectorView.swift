@@ -9,6 +9,9 @@ struct InspectorView: View {
     @State private var image: NSImage?
     @State private var text: String?
     @State private var loadingFor: String?
+    /// Bumped per preview request so a slow, superseded load never lands.
+    @State private var previewGen = 0
+    @State private var openError: String?
 
     var body: some View {
         Group {
@@ -69,6 +72,10 @@ struct InspectorView: View {
                 Label("Open with default app", systemImage: "arrow.up.forward.app")
             }
             .help("Extracts the file to the session's temp dir and opens it")
+            if let e = openError {
+                Label(e, systemImage: "xmark.octagon").foregroundStyle(.red).font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(12)
         .task(id: rec.id) { await loadPreview(rec) }
@@ -123,6 +130,8 @@ struct InspectorView: View {
     private func loadPreview(_ rec: ResultRecord) async {
         image = nil; text = nil
         loadingFor = rec.id
+        previewGen += 1
+        let gen = previewGen
         let id = rec.id
         let session = results.session
         let kind = previewKind
@@ -131,17 +140,26 @@ struct InspectorView: View {
             if kind == .thumbnail { return (Data(p.bytes), nil) }
             return (nil, String(data: Data(p.bytes), encoding: .utf8))
         }.value
-        if loadingFor == id {
-            image = out.0.flatMap { NSImage(data: $0) }
-            text = out.1
-            loadingFor = nil
-        }
+        // Only the latest request may apply its result (record or kind changed).
+        guard gen == previewGen else { return }
+        image = out.0.flatMap { NSImage(data: $0) }
+        text = out.1
+        loadingFor = nil
     }
 
     /// Extract to the session temp dir and hand to the default app (PDFKit /
     /// AVFoundation open these; doc 08 §2.3).
     private func openExternally(_ rec: ResultRecord) {
-        guard let path = try? results.session.extractTemp(id: rec.id) else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        openError = nil
+        let session = results.session
+        let id = rec.id
+        Task {
+            do {
+                let path = try await Task.detached { try session.extractTemp(id: id) }.value
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            } catch {
+                openError = "Could not extract: \(error)"
+            }
+        }
     }
 }

@@ -36,7 +36,8 @@ pub(crate) fn open(path: &Path) -> Result<super::map::MappedSource, BlockError> 
     }
     let cluster_bits =
         be_u32(&hdr, 20).ok_or_else(|| BlockError::Container("qcow2: no cluster_bits".into()))?;
-    if !(9..=30).contains(&cluster_bits) {
+    // Spec: cluster_bits is 9..=21 (512 B .. 2 MiB).
+    if !(9..=21).contains(&cluster_bits) {
         return Err(BlockError::Container(
             "qcow2: implausible cluster_bits".into(),
         ));
@@ -73,8 +74,9 @@ pub(crate) fn open(path: &Path) -> Result<super::map::MappedSource, BlockError> 
     let coffset_mask = (1u64 << csize_shift) - 1;
 
     let mut smap = SegmentMap::new();
-    // Cache L2 tables we have read (by host offset) to avoid re-reading.
-    let mut l2_cache: std::collections::HashMap<u64, Vec<u8>> = std::collections::HashMap::new();
+    // The walk is sequential, so a single current-L2-table cache suffices
+    // (an unbounded per-offset cache would hold every L2 table of the image).
+    let mut cur_l2: Option<(u64, Vec<u8>)> = None;
 
     for c in 0..total_clusters {
         let l1_index = c / l2_entries;
@@ -91,13 +93,13 @@ pub(crate) fn open(path: &Path) -> Result<super::map::MappedSource, BlockError> 
             continue;
         }
 
-        let l2 = match l2_cache.get(&l2_off) {
-            Some(t) => t,
-            None => {
-                let t = read_exact_vec(&backing, l2_off, cluster_size as usize)
-                    .ok_or_else(|| BlockError::Container("qcow2: cannot read L2".into()))?;
-                l2_cache.entry(l2_off).or_insert(t)
-            }
+        if !matches!(&cur_l2, Some((off, _)) if *off == l2_off) {
+            let t = read_exact_vec(&backing, l2_off, cluster_size as usize)
+                .ok_or_else(|| BlockError::Container("qcow2: cannot read L2".into()))?;
+            cur_l2 = Some((l2_off, t));
+        }
+        let Some((_, l2)) = &cur_l2 else {
+            return Err(BlockError::Container("qcow2: cannot read L2".into()));
         };
         let l2e = be_u64(l2, usize::try_from(l2_index * 8).unwrap_or(usize::MAX)).unwrap_or(0);
 

@@ -55,7 +55,7 @@ pub fn validate(ctx: &Ctx) -> Verdict {
             names.push(name_s);
         }
         // Data descriptor (bit 3) hides the size in the header → cannot advance.
-        if flags & 0x08 != 0 || comp_size == 0 && i > 0 {
+        if flags & 0x08 != 0 {
             blocked = true;
             break;
         }

@@ -41,6 +41,9 @@ pub fn validate(ctx: &Ctx) -> Verdict {
     let ord = match head.get(0..4) {
         Some([0x49, 0x49, 0x2A, 0x00]) => Order { be: false },
         Some([0x4D, 0x4D, 0x00, 0x2A]) => Order { be: true },
+        // Olympus ORF magics (`IIRO`, `IIRS`, `MMOR`) still parse as TIFF.
+        Some([0x49, 0x49, 0x52, 0x4F | 0x53]) => Order { be: false },
+        Some([0x4D, 0x4D, 0x4F, 0x52]) => Order { be: true },
         // Olympus/Panasonic TIFF-magic variants still parse as TIFF-LE.
         Some([0x49, 0x49, _, 0x00]) => Order { be: false },
         _ => return Verdict::reject(),
@@ -326,9 +329,14 @@ fn ascii_value(
 }
 
 fn exif_date(s: &str) -> Option<String> {
-    // "YYYY:MM:DD HH:MM:SS" → "YYYY-MM-DD"
+    // "YYYY:MM:DD HH:MM:SS" → "YYYY-MM-DD"; the shape is checked so a hostile
+    // tag cannot smuggle path characters into a synthesized name.
     let d = s.get(0..10)?;
-    if d.len() == 10 {
+    let ok = d.bytes().enumerate().all(|(i, b)| match i {
+        4 | 7 => b == b':' || b == b'-',
+        _ => b.is_ascii_digit(),
+    });
+    if d.len() == 10 && ok {
         Some(d.replace(':', "-"))
     } else {
         None

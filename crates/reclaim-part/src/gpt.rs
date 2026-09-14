@@ -117,7 +117,12 @@ pub(crate) fn parse(src: &Arc<dyn BlockSource>, ss: u64, total: u64) -> Option<P
             continue;
         }
         let start = first_lba.saturating_mul(ss);
-        let len = (last_lba - first_lba + 1).saturating_mul(ss);
+        // Clamp to the source like mbr.rs so an entry running past a truncated
+        // image still opens (the tail is simply missing).
+        let len = (last_lba - first_lba)
+            .saturating_add(1)
+            .saturating_mul(ss)
+            .min(total.saturating_sub(start));
         if start >= total || len == 0 {
             continue;
         }
@@ -285,5 +290,21 @@ mod tests {
         assert!(m.confidence > 0.95, "clean CRCs → high confidence");
         assert_eq!(m.containers.len(), 1);
         assert_eq!(m.containers[0].kind, "apfs-container");
+    }
+
+    #[test]
+    fn entry_past_truncated_image_is_clamped() {
+        let apfs = [
+            0xEF, 0x57, 0x34, 0x7C, 0x00, 0x00, 0xAA, 0x11, 0xAA, 0x11, 0x00, 0x30, 0x65, 0x43,
+            0xEC, 0xAC,
+        ];
+        // last_lba = u64::MAX would overflow `last - first + 1`; the image is
+        // only 2048 sectors so the entry must be clamped, not dropped.
+        let img = gpt_image(apfs, 40, u64::MAX);
+        let src = open(&img);
+        let m = parse(&src, 512, src.len()).unwrap();
+        assert_eq!(m.entries.len(), 1);
+        assert_eq!(m.entries[0].start, 40 * 512);
+        assert_eq!(m.entries[0].len, src.len() - 40 * 512);
     }
 }

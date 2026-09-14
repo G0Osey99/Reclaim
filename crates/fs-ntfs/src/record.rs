@@ -159,8 +159,14 @@ impl MftRecord {
                     attr.runs = decode_runs(rec.get(a + run_off..a + total_len).unwrap_or(&[]));
                 }
             } else {
-                let clen = le_u32(&rec, a + 16) as usize;
                 let coff = le_u16(&rec, a + 20) as usize;
+                // Clamp resident content to the attribute record it lives in.
+                let clen = le_u32(&rec, a + 16) as usize;
+                let clen = if coff < total_len {
+                    clen.min(total_len - coff)
+                } else {
+                    0
+                };
                 attr.real_size = clen as u64;
                 attr.content_off = a + coff;
                 attr.content_len = clen;

@@ -125,24 +125,17 @@ fn detect_source(src: &Arc<dyn BlockSource>, path: &Path) -> Container {
     if head.get(0x40..0x44) == Some(&[0x7F, 0x10, 0xDA, 0xBE]) {
         return Container::Vdi;
     }
-    // DMG UDIF: "koly" magic in the trailing 512-byte block.
+    // Trailing 512 bytes (read via the aligned-superset helper so unaligned
+    // file lengths still yield the true trailer):
+    // DMG UDIF "koly" magic / VHD "conectix" footer cookie.
     if len >= 512 {
-        let mut trailer = [0u8; 512];
-        let _ = src.read_at((len - 512) & !511, &mut trailer);
-        // koly lives at the very end; the aligned read above may include a tail.
-        let off = ((len - 512) - ((len - 512) & !511)) as usize;
-        if trailer.get(off..off + 4) == Some(b"koly") || trailer.starts_with(b"koly") {
-            return Container::Dmg;
-        }
-    }
-    // VHD: "conectix" cookie in the trailing 512-byte footer.
-    if len >= 512 {
-        let mut footer = [0u8; 512];
-        let base = (len - 512) & !511;
-        let _ = src.read_at(base, &mut footer);
-        let off = ((len - 512) - base) as usize;
-        if footer.get(off..off + 8) == Some(b"conectix") || footer.starts_with(b"conectix") {
-            return Container::Vhd;
+        if let Some(trailer) = read_exact_vec(src, len - 512, 512) {
+            if trailer.starts_with(b"koly") {
+                return Container::Dmg;
+            }
+            if trailer.starts_with(b"conectix") {
+                return Container::Vhd;
+            }
         }
     }
 

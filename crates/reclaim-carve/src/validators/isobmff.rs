@@ -27,6 +27,7 @@ pub fn validate(ctx: &Ctx) -> Verdict {
     let mut saw_mdat = false;
     let mut brand: Option<[u8; 4]> = None;
     let mut moov_range: Option<(u64, u64)> = None;
+    let mut open_ended = false;
 
     for _ in 0..MAX_BOXES {
         if pos + 8 > cap {
@@ -73,6 +74,8 @@ pub fn validate(ctx: &Ctx) -> Verdict {
         }
 
         match &typ {
+            // A second top-level `ftyp` is the next file, not a box of ours.
+            b"ftyp" if pos > 0 => break,
             b"ftyp" => {
                 saw_ftyp = true;
                 if brand.is_none() {
@@ -95,14 +98,21 @@ pub fn validate(ctx: &Ctx) -> Verdict {
         }
         pos = box_end;
         if size32 == 0 {
-            break; // consumed to EOF
+            // "to EOF" has no real end on a raw device: never claim Full.
+            open_ended = true;
+            break;
         }
     }
 
     if pos == 0 || (!saw_ftyp && !saw_moov && !saw_mdat) {
         return Verdict::reject();
     }
-    let mut v = finalize(pos, saw_ftyp, saw_moov, saw_mdat, brand, Validity::Full);
+    let validity = if open_ended {
+        Validity::Truncated
+    } else {
+        Validity::Full
+    };
+    let mut v = finalize(pos, saw_ftyp, saw_moov, saw_mdat, brand, validity);
     if let Some((s, e)) = moov_range {
         v.meta = mvhd_meta(ctx, s, e);
     }

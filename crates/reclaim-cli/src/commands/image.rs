@@ -1,7 +1,7 @@
 //! `reclaim image` / `reclaim verify-image` (docs/plan/07 §2). The image writer
 //! itself lives in reclaim-block (allow-listed); this module only drives it.
 
-use crate::commands::common::open_source;
+use crate::commands::common::{dest_on_same_disk, open_source};
 use crate::exit::{CmdError, CmdResult, Exit};
 use crate::util::format_size;
 use reclaim_block::imaging::{image, verify_image, Compression, HashAlgo, ImageOptions};
@@ -21,11 +21,24 @@ pub struct ImageArgs<'a> {
     pub hash: String,
     pub resume: bool,
     pub quiet: bool,
+    pub allow_same_device: bool,
 }
 
 /// Run `image`.
 pub fn run(args: &ImageArgs) -> CmdResult {
-    let (_r, src, _info) = open_source(args.source)?;
+    let (resolved, src, _info) = open_source(args.source)?;
+    // Same-whole-disk refusal (docs/plan/07 §5): imaging onto the source disk
+    // overwrites the very sectors being rescued.
+    if !args.allow_same_device && dest_on_same_disk(&resolved, &args.out) {
+        return Err(CmdError::new(
+            Exit::Refused,
+            format!(
+                "image destination {} is on the same disk as the source — refusing (data-loss risk). \
+                 Pass --allow-same-device-i-accept-data-loss to override.",
+                args.out.display()
+            ),
+        ));
+    }
     let map_path = args
         .map
         .clone()

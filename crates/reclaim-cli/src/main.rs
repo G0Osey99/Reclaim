@@ -255,6 +255,9 @@ enum Command {
         /// Resume from the map.
         #[arg(long)]
         resume: bool,
+        /// Override the same-device destination refusal (data-loss risk).
+        #[arg(long = "allow-same-device-i-accept-data-loss")]
+        allow_same_device: bool,
     },
     /// Verify an image against its map.
     VerifyImage {
@@ -538,6 +541,7 @@ fn dispatch(cli: &Cli) -> Result<Exit, CmdError> {
             zstd,
             hash,
             resume,
+            allow_same_device,
         } => {
             let block = match block {
                 Some(b) => Some(
@@ -561,6 +565,7 @@ fn dispatch(cli: &Cli) -> Result<Exit, CmdError> {
                 hash: hash.clone(),
                 resume: *resume,
                 quiet: cli.quiet,
+                allow_same_device: *allow_same_device,
             };
             commands::image::run(&args)
         }

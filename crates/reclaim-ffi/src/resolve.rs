@@ -8,6 +8,7 @@ use crate::RcError;
 use reclaim_block::{BlockSource, OffsetView, RawDevice};
 use reclaim_platform_macos::Disk;
 use reclaim_session::SourceInfo;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -237,11 +238,16 @@ pub(crate) fn dest_on_same_disk(source: &Resolved, dest: &Path) -> bool {
             (Some(a), Some(b)) => a == b,
             _ => false,
         },
+        // Unknown destination disk or a non-`diskN` label (bare fd spec):
+        // refuse rather than guess.
         Resolved::Device { bsd, .. } | Resolved::Fd { label: bsd, .. } => {
-            match (Some(whole_disk(bsd)), dest_whole_disk(dest)) {
-                (Some(a), Some(b)) => a == b,
-                _ => false,
+            if !bsd.starts_with("disk") {
+                return true;
             }
+            let Some(dest_whole) = dest_whole_disk(dest) else {
+                return true;
+            };
+            !physical_set(&whole_disk(bsd)).is_disjoint(&physical_set(&dest_whole))
         }
         Resolved::Volume { .. } => source
             .underlying()
@@ -275,6 +281,23 @@ fn fs_device_ancestor(path: &Path) -> Option<u64> {
         }
         p = p.parent()?;
     }
+}
+
+/// `whole` plus, when it is a synthesized APFS container, the whole disk of
+/// each of its physical stores (`disk3` on `disk0s2` ⇒ `{disk3, disk0}`).
+fn physical_set(whole: &str) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    set.insert(whole.to_string());
+    if let Ok(disks) = reclaim_platform_macos::enumerate() {
+        if let Some(d) = disks.iter().find(|d| d.bsd_name == whole) {
+            if let Some(apfs) = &d.apfs {
+                for store in &apfs.physical_stores {
+                    set.insert(whole_disk(store));
+                }
+            }
+        }
+    }
+    set
 }
 
 fn whole_disk(bsd: &str) -> String {

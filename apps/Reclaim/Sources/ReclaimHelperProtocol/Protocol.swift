@@ -4,6 +4,15 @@ import Foundation
 /// and the `SMAppService.daemon(plistName:)` registration).
 public let reclaimHelperMachServiceName = "com.reclaim.helper"
 
+/// The app's bundle identifier (packaging/Info.plist `CFBundleIdentifier`); the
+/// helper pins incoming connections to it.
+public let reclaimAppBundleIdentifier = "com.reclaim.app"
+
+/// The helper's code-signing identifier. It is a bare executable signed without
+/// `-i` (scripts/build-app.sh), so codesign derives the identifier from the file
+/// name `Contents/MacOS/ReclaimHelper`; the app pins its connection to it.
+public let reclaimHelperCodeIdentifier = "ReclaimHelper"
+
 /// The code-signing requirement each side pins on the XPC connection so the app
 /// only talks to *its* helper and the helper only serves *its* app (doc 03 §7,
 /// "Code requirement checks both ways"). The team ID is the cert's OU — the same
@@ -14,6 +23,29 @@ public func reclaimCodeRequirement(teamID: String?) -> String {
     }
     // Ad-hoc / development: no team to pin. The caller decides whether to enforce.
     return "anchor apple generic"
+}
+
+/// `reclaimCodeRequirement(teamID:)` additionally pinned to a code-signing
+/// `identifier` (the peer's bundle id / executable identifier), so a same-team
+/// binary that is not the expected peer is refused too.
+public func reclaimCodeRequirement(teamID: String?, identifier: String?) -> String {
+    var req = ""
+    if let id = identifier, !id.isEmpty {
+        req += "identifier \"\(id)\" and "
+    }
+    return req + reclaimCodeRequirement(teamID: teamID)
+}
+
+/// Only ever act on a real BSD disk node: `disk3`, `disk3s5`, `rdisk3s1s2`.
+/// ASCII digits only (no Unicode numerals), at most 32 characters, no path
+/// separators.
+public func isValidBSDName(_ name: String) -> Bool {
+    guard name.count <= 32, name.allSatisfy({ $0.isASCII }) else { return false }
+    let n = name.hasPrefix("r") ? String(name.dropFirst()) : name
+    guard n.hasPrefix("disk") else { return false }
+    let rest = n.dropFirst(4)
+    guard let first = rest.first, first.isASCII, first.isNumber else { return false }
+    return rest.allSatisfy { ($0.isASCII && $0.isNumber) || $0 == "s" }
 }
 
 /// The team ID to pin, resolved at runtime: the `RECLAIM_TEAM_ID` env override

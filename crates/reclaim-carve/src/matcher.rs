@@ -126,6 +126,20 @@ impl Matcher {
                 let Some(file_start) = patt_start.checked_sub(h.offset) else {
                     continue;
                 };
+                // Confirm the full masked pattern when it lies inside `buf`;
+                // a window cut by the buffer edge is left to the validator.
+                let window = patt_start
+                    .checked_sub(base)
+                    .and_then(|rel| usize::try_from(rel).ok())
+                    .and_then(|rel| {
+                        rel.checked_add(h.bytes.len())
+                            .and_then(|end| buf.get(rel..end))
+                    });
+                if let Some(window) = window {
+                    if !h.confirm(window) {
+                        continue;
+                    }
+                }
                 f(Candidate {
                     sig_idx: r.sig_idx,
                     header_idx: r.header_idx,

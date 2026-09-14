@@ -17,6 +17,9 @@ use std::sync::Arc;
 const SECTOR: u64 = 512;
 const BAT_UNUSED: u32 = 0xFFFF_FFFF;
 const MAX_BLOCKS: u64 = 16 * 1024 * 1024;
+const MAX_BLOCK_SIZE: u64 = 64 * 1024 * 1024;
+/// VHD's CHS geometry tops out at ~2040 GiB.
+const MAX_CURRENT_SIZE: u64 = 2040 * 1024 * 1024 * 1024;
 
 pub(crate) fn open(path: &Path) -> Result<Arc<dyn BlockSource>, BlockError> {
     let img = ImageFile::open(path)?;
@@ -75,7 +78,13 @@ fn open_dynamic(
     let block_size = u64::from(
         be_u32(&dyn_hdr, 32).ok_or_else(|| BlockError::Container("vhd: no blockSize".into()))?,
     );
-    if block_size == 0 || max_entries == 0 || max_entries > MAX_BLOCKS {
+    if block_size == 0
+        || !block_size.is_multiple_of(SECTOR)
+        || block_size > MAX_BLOCK_SIZE
+        || current_size > MAX_CURRENT_SIZE
+        || max_entries == 0
+        || max_entries > MAX_BLOCKS
+    {
         return Err(BlockError::Container("vhd: implausible geometry".into()));
     }
     let sectors_per_block = block_size / SECTOR;
@@ -105,6 +114,12 @@ fn open_dynamic(
         let data_start = block_start.saturating_add(bitmap_span);
         // Read the sector bitmap to distinguish present vs absent sectors.
         let bm = read_exact_vec(backing, block_start, bitmap_bytes as usize).unwrap_or_default();
+        // Fast path: a fully-present block is one contiguous raw run.
+        let needed = this_out.div_ceil(SECTOR);
+        if (0..needed).all(|s| bit_set(&bm, s)) {
+            smap.push(this_out, Piece::Raw { pos: data_start });
+            continue;
+        }
         let mut sec = 0u64;
         let mut produced = 0u64;
         while produced < this_out {

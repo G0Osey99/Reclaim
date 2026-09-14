@@ -113,8 +113,16 @@ pub fn recover_records(
     for rec in records {
         let rel = out_rel_path(rec, opts.preserve_paths, opts.flat);
         let out_path = dest.join(&rel);
+        if !out_path.starts_with(dest) {
+            summary.skipped += 1;
+            continue;
+        }
+        // Per-file I/O failures skip the record rather than aborting the run.
         if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            if std::fs::create_dir_all(parent).is_err() {
+                summary.skipped += 1;
+                continue;
+            }
         }
         let final_path = match resolve_collision(&out_path, opts.collision) {
             Some(p) => p,
@@ -123,14 +131,22 @@ pub fn recover_records(
                 continue;
             }
         };
-        let hash = write_extent(reader, rec, &final_path)?;
+        let Ok((hash, suspect)) = write_extent(reader, rec, &final_path) else {
+            summary.skipped += 1;
+            continue;
+        };
         summary.recovered += 1;
-        summary.bytes += rec.len;
-        if rec.validity != "full" {
+        summary.bytes = summary.bytes.saturating_add(rec.len);
+        let validity = if suspect && rec.validity == "full" {
+            "suspect".to_string()
+        } else {
+            rec.validity.clone()
+        };
+        if validity != "full" {
             summary.partial += 1;
         }
         let verified = if opts.verify {
-            let ok = verify_file(&final_path, &hash)?;
+            let ok = verify_file(&final_path, &hash).unwrap_or(false);
             if !ok {
                 summary.verify_failed += 1;
             }
@@ -147,7 +163,7 @@ pub fn recover_records(
             id: rec.id.clone(),
             path: rel_final,
             len: rec.len,
-            validity: rec.validity.clone(),
+            validity,
             blake3: hash,
             verified,
         };
@@ -191,7 +207,17 @@ pub fn extract_to_temp(
 ) -> Result<PathBuf, SessionError> {
     let tmp = session_dir.join("preview-tmp");
     std::fs::create_dir_all(&tmp)?;
-    let ext = if rec.ext.is_empty() { "bin" } else { &rec.ext };
+    let ext: String = rec
+        .ext
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(16)
+        .collect();
+    let ext = if ext.is_empty() {
+        "bin".to_string()
+    } else {
+        ext
+    };
     let out = tmp.join(format!("{}.{ext}", rec.id));
     let mut f = OpenOptions::new()
         .write(true)
@@ -219,13 +245,44 @@ pub fn extract_to_temp(
 }
 
 fn out_rel_path(rec: &CarvedRecord, preserve: bool, flat: bool) -> PathBuf {
-    let synth = rec.synth_path();
-    if flat || !preserve {
-        let name = synth.rsplit('/').next().unwrap_or(&synth);
-        PathBuf::from(name)
+    safe_rel_path(&rec.synth_path(), flat || !preserve)
+}
+
+/// Turn a synthesized (possibly hostile) path into a destination-relative
+/// path that cannot escape the destination: splits on `/` and `\`, drops
+/// empty / `.` / `..` components, replaces NUL, `:` and control characters
+/// with `_`, caps each component at 200 chars, and yields `unnamed` when
+/// nothing remains. With `flat`, only the last component is kept.
+#[must_use]
+pub fn safe_rel_path(synth: &str, flat: bool) -> PathBuf {
+    let comps: Vec<String> = synth
+        .split(['/', '\\'])
+        .filter(|c| !c.is_empty() && *c != "." && *c != "..")
+        .map(|c| {
+            c.chars()
+                .map(|ch| match ch {
+                    '\0' | ':' => '_',
+                    ch if ch.is_control() => '_',
+                    ch => ch,
+                })
+                .take(200)
+                .collect::<String>()
+        })
+        .collect();
+    let mut out = PathBuf::new();
+    if flat {
+        if let Some(last) = comps.last() {
+            out.push(last);
+        }
     } else {
-        PathBuf::from(synth)
+        for c in &comps {
+            out.push(c);
+        }
     }
+    if out.as_os_str().is_empty() {
+        out.push("unnamed");
+    }
+    out
 }
 
 fn resolve_collision(path: &Path, policy: Collision) -> Option<PathBuf> {
@@ -258,24 +315,26 @@ fn resolve_collision(path: &Path, policy: Collision) -> Option<PathBuf> {
 }
 
 /// Write a result's source extents to `out_path`, returning the BLAKE3 hex of
-/// the bytes written.
+/// the bytes written and whether any byte came from a bad/unread sector.
 fn write_extent(
     reader: &SourceReader,
     rec: &CarvedRecord,
     out_path: &Path,
-) -> Result<String, SessionError> {
+) -> Result<(String, bool), SessionError> {
     let mut f = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(out_path)?;
     let mut digest = Digest::new(HashAlgo::Blake3);
+    let mut suspect = false;
     for (ext_off, ext_len) in rec.extents() {
         let mut off = ext_off;
         let mut remaining = ext_len;
         while remaining > 0 {
             let n = remaining.min(CHUNK as u64) as usize;
-            let buf = reader.read(off, n);
+            let (buf, bad) = reader.read_flags(off, n);
+            suspect |= bad;
             f.write_all(&buf)?;
             digest.update(&buf);
             off += n as u64;
@@ -283,11 +342,11 @@ fn write_extent(
         }
     }
     f.flush()?;
-    Ok(digest.finalize_hex())
+    Ok((digest.finalize_hex(), suspect))
 }
 
 /// Re-read a written file and confirm its BLAKE3 equals `expected`.
-fn verify_file(path: &Path, expected: &str) -> Result<bool, SessionError> {
+pub fn verify_file(path: &Path, expected: &str) -> Result<bool, SessionError> {
     let mut f = std::fs::File::open(path)?;
     let mut digest = Digest::new(HashAlgo::Blake3);
     let mut buf = vec![0u8; CHUNK];
@@ -384,6 +443,23 @@ mod tests {
             .filter(|n| n != "manifest.json")
             .collect();
         assert_eq!(names.len(), 2); // one renamed
+    }
+
+    #[test]
+    fn safe_rel_path_blocks_traversal() {
+        assert_eq!(
+            safe_rel_path("x/../../etc/passwd", false),
+            PathBuf::from("x/etc/passwd")
+        );
+        assert_eq!(safe_rel_path("..", false), PathBuf::from("unnamed"));
+        assert_eq!(safe_rel_path("/", false), PathBuf::from("unnamed"));
+        assert_eq!(
+            safe_rel_path("a\\b:c\0d/e", false),
+            PathBuf::from("a/b_c_d/e")
+        );
+        assert_eq!(safe_rel_path("a/b/c.txt", true), PathBuf::from("c.txt"));
+        let long = "x".repeat(300);
+        assert_eq!(safe_rel_path(&long, false).to_string_lossy().len(), 200);
     }
 
     #[test]

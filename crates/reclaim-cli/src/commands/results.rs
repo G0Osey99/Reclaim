@@ -150,10 +150,16 @@ fn record_json(r: &CarvedRecord) -> serde_json::Value {
 }
 
 fn csv(s: &str) -> String {
-    if s.contains([',', '"']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
+    // Neutralize spreadsheet formula injection, then quote per RFC 4180.
+    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{s}")
     } else {
         s.to_string()
+    };
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
     }
 }
 
@@ -198,4 +204,18 @@ fn print_tree(records: &[CarvedRecord]) {
         }
     }
     walk(&root, 0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::csv;
+
+    #[test]
+    fn csv_neutralizes_formulas_and_quotes() {
+        assert_eq!(csv("=cmd|' /C calc'!A0"), "'=cmd|' /C calc'!A0");
+        assert_eq!(csv("\tx"), "'\tx");
+        assert_eq!(csv("a,b"), "\"a,b\"");
+        assert_eq!(csv("q\"q"), "\"q\"\"q\"");
+        assert_eq!(csv("plain"), "plain");
+    }
 }

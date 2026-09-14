@@ -8,7 +8,7 @@
 //! `lzma-rs`, `lzfse_rust`), so they add no dynamic library — the Recovery-Mode
 //! build's `otool -L` stays limited to system libraries (docs/plan/06 §4).
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 /// Compression of one container block. Each format parser maps its own type
 /// codes onto these.
@@ -89,30 +89,65 @@ fn inflate<R: Read>(mut r: R, hint: usize) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// A `Write` sink that refuses to grow past `cap` bytes, so a streaming
+/// decoder fails mid-stream on a decompression bomb instead of filling memory
+/// and being checked only afterwards.
+struct CappedSink {
+    buf: Vec<u8>,
+    cap: usize,
+}
+
+impl CappedSink {
+    fn new(cap: usize) -> Self {
+        CappedSink {
+            buf: Vec::new(),
+            cap,
+        }
+    }
+}
+
+impl Write for CappedSink {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if self.buf.len().saturating_add(data.len()) > self.cap {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "decoded block exceeds expected length",
+            ));
+        }
+        self.buf.extend_from_slice(data);
+        Ok(data.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// LZMA-alone first (DMG `ULMO` blocks are raw LZMA1 streams); fall back to `.xz`.
+/// Both decode through a capped sink; `memlimit` also bounds the dictionary.
 fn lzma_any(src: &[u8], hint: usize) -> Option<Vec<u8>> {
+    let cap = hint.min(MAX_BLOCK_OUT).saturating_add(1);
+    let opts = lzma_rs::decompress::Options {
+        memlimit: Some(cap.max(1 << 20)),
+        ..Default::default()
+    };
     let mut cur = std::io::Cursor::new(src);
-    let mut out = Vec::new();
-    if lzma_rs::lzma_decompress(&mut cur, &mut out).is_ok() && out.len() <= MAX_BLOCK_OUT {
-        return Some(out);
+    let mut sink = CappedSink::new(cap);
+    if lzma_rs::lzma_decompress_with_options(&mut cur, &mut sink, &opts).is_ok() {
+        return Some(sink.buf);
     }
     let mut cur = std::io::Cursor::new(src);
-    let mut out = Vec::new();
-    if lzma_rs::xz_decompress(&mut cur, &mut out).is_ok() && out.len() <= MAX_BLOCK_OUT {
-        return Some(out);
+    let mut sink = CappedSink::new(cap);
+    if lzma_rs::xz_decompress(&mut cur, &mut sink).is_ok() {
+        return Some(sink.buf);
     }
-    let _ = hint;
     None
 }
 
-/// LZFSE (DMG `ULFO`).
+/// LZFSE (DMG `ULFO`), decoded through the streaming ring decoder so output is
+/// capped as it is produced.
 fn lzfse(src: &[u8], hint: usize) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    match lzfse_rust::decode_bytes(src, &mut out) {
-        Ok(_) if out.len() <= MAX_BLOCK_OUT && (hint == 0 || out.len() == hint) => Some(out),
-        Ok(_) => Some(out), // length mismatch handled by the caller's out_len check
-        Err(_) => None,
-    }
+    let mut dec = lzfse_rust::LzfseRingDecoder::default();
+    inflate(dec.reader_bytes(src), hint)
 }
 
 #[cfg(test)]

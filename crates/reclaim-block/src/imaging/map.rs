@@ -161,11 +161,17 @@ impl ImageMap {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
-    /// Save the map as pretty JSON.
+    /// Save the map as pretty JSON. Written to `<path>.tmp` and renamed into
+    /// place so an interrupted save never leaves a truncated map behind
+    /// (resume would otherwise refuse to load it).
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let text = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, text)
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        let tmp = std::path::PathBuf::from(tmp);
+        std::fs::write(&tmp, text)?;
+        std::fs::rename(&tmp, path)
     }
 }
 

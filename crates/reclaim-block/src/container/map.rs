@@ -219,8 +219,14 @@ impl MappedSource {
                 // A compressed block's declared length is an upper bound (the
                 // real stream self-terminates); clamp it to what the backing
                 // file actually holds so we never request bytes past EOF.
+                // Also cap it relative to the output: a real compressed block
+                // is never much larger than what it decodes to.
                 let avail = self.backing.len().saturating_sub(pos);
-                let clen = usize::try_from(clen.min(avail)).ok()?;
+                let max_clen = seg
+                    .out_len
+                    .saturating_add(seg.out_len / 8)
+                    .saturating_add(1 << 20);
+                let clen = usize::try_from(clen.min(avail).min(max_clen)).ok()?;
                 let out_len = usize::try_from(seg.out_len).ok()?;
                 let mut comp = vec![0u8; clen];
                 // Compressed blocks (qcow2, E01) are not necessarily

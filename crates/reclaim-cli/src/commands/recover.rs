@@ -8,7 +8,7 @@ use crate::source::Resolved;
 use reclaim_block::imaging::hash::Digest;
 use reclaim_block::imaging::HashAlgo;
 use reclaim_carve::reader::{Reader, SourceReader};
-use reclaim_session::{CarvedRecord, QueryFilter, Store};
+use reclaim_session::{safe_rel_path, CarvedRecord, QueryFilter, Store};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -110,6 +110,9 @@ pub fn run(args: &RecoverArgs) -> CmdResult {
     for rec in &records {
         let rel = out_rel_path(rec, args.preserve_paths, args.flat);
         let out_path = args.dest.join(&rel);
+        if !out_path.starts_with(&args.dest) {
+            continue; // cannot escape the destination
+        }
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| CmdError::internal(format!("create dir: {e}")))?;
@@ -124,6 +127,13 @@ pub fn run(args: &RecoverArgs) -> CmdResult {
         if rec.validity != "full" {
             partial += 1;
         }
+        // Verify-after-copy: re-read the written file and compare hashes.
+        let verified = if args.verify {
+            reclaim_session::recover::verify_file(&final_path, &hash)
+                .map_err(|e| CmdError::internal(format!("verify {}: {e}", final_path.display())))?
+        } else {
+            false
+        };
         let rel_final = final_path
             .strip_prefix(&args.dest)
             .unwrap_or(&final_path)
@@ -137,7 +147,7 @@ pub fn run(args: &RecoverArgs) -> CmdResult {
             "format": rec.format,
             "validity": rec.validity,
             "blake3": hash,
-            "verified": args.verify,
+            "verified": verified,
         }));
         if !args.quiet {
             eprintln!(
@@ -315,14 +325,7 @@ fn is_empty_filter(f: &QueryFilter) -> bool {
 }
 
 fn out_rel_path(rec: &CarvedRecord, preserve: bool, flat: bool) -> PathBuf {
-    let synth = rec.synth_path();
-    if flat || !preserve {
-        // Flat: just the file name.
-        let name = synth.rsplit('/').next().unwrap_or(&synth);
-        PathBuf::from(name)
-    } else {
-        PathBuf::from(synth)
-    }
+    safe_rel_path(&rec.synth_path(), flat || !preserve)
 }
 
 fn resolve_collision(path: &Path, policy: Collision) -> Option<PathBuf> {

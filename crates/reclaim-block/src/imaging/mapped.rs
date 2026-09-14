@@ -3,6 +3,7 @@
 //! [`SectorStatus::Unread`] and known-bad regions [`SectorStatus::Bad`]; for
 //! zstd-framed images, reads are served by decompressing the covering frames.
 
+use crate::bad_block::LbaRange;
 use crate::imaging::map::{Compression, FrameEntry, ImageMap};
 use crate::source::{BlockSource, ReadResult, SourceId};
 use std::fs::File;
@@ -18,6 +19,15 @@ pub struct MappedImage {
     id: SourceId,
     /// Frames sorted by image_offset (zstd only).
     frames: Vec<FrameEntry>,
+    /// `map.bad` / `map.unread`, sorted and coalesced for binary search.
+    bad: Vec<LbaRange>,
+    unread: Vec<LbaRange>,
+}
+
+/// Binary search over sorted, coalesced ranges.
+fn in_ranges(ranges: &[LbaRange], lba: u64) -> bool {
+    let i = ranges.partition_point(|r| r.start <= lba);
+    i > 0 && ranges.get(i - 1).is_some_and(|r| r.contains(lba))
 }
 
 impl MappedImage {
@@ -27,22 +37,34 @@ impl MappedImage {
         crate::open_log::record_open(image_path, libc::O_RDONLY);
         let mut frames = map.frames.clone();
         frames.sort_by_key(|f| f.image_offset);
+        // The imager coalesces at checkpoints, but a map may have been written
+        // (or edited) elsewhere: normalize once so lookups can binary-search.
+        let mut bad = map.bad.clone();
+        crate::imaging::imager::coalesce(&mut bad);
+        let mut unread = map.unread.clone();
+        crate::imaging::imager::coalesce(&mut unread);
         let id = SourceId::new(format!("mapped:{}", map.source_id));
         Ok(MappedImage {
             file,
             map: Arc::new(map),
             id,
             frames,
+            bad,
+            unread,
         })
     }
 
     fn overlay_status(&self, offset: u64, res: &mut ReadResult) {
         let ss = u64::from(self.map.sector_size.max(1));
+        let cs = u64::from(self.map.chunk_size.max(1));
         for i in 0..res.sector_count() {
             let lba = (offset / ss).saturating_add(i as u64);
-            if self.map.bad.iter().any(|r| r.contains(lba)) {
+            let chunk = usize::try_from(lba.saturating_mul(ss) / cs).unwrap_or(usize::MAX);
+            if in_ranges(&self.bad, lba) {
                 res.mark_bad(i);
-            } else if self.map.unread.iter().any(|r| r.contains(lba)) {
+            } else if in_ranges(&self.unread, lba) || !self.map.is_chunk_done(chunk) {
+                // A chunk that was never completed (no hash) holds no imaged
+                // bytes even if the `unread` list does not mention it.
                 res.mark_unread(i);
             }
         }
@@ -151,11 +173,62 @@ mod tests {
             .push(crate::bad_block::LbaRange { start: 1, count: 1 });
         map.unread
             .push(crate::bad_block::LbaRange { start: 3, count: 1 });
+        for h in &mut map.chunk_hashes {
+            *h = Some("done".into());
+        }
         let mi = MappedImage::open(&img, map).unwrap();
         let mut buf = vec![0u8; 2048];
         let r = mi.read_at(0, &mut buf);
         assert_eq!(r.status(0), SectorStatus::Good);
         assert_eq!(r.status(1), SectorStatus::Bad);
         assert_eq!(r.status(3), SectorStatus::Unread);
+    }
+
+    #[test]
+    fn incomplete_chunks_read_as_unread() {
+        use std::io::Write;
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&[0xCDu8; 2048]).unwrap();
+        tf.flush().unwrap();
+        let mut map = ImageMap::new(
+            "t".into(),
+            2048,
+            512,
+            512,
+            HashAlgo::Blake3,
+            Compression::None,
+        );
+        // Only chunk 2 was imaged; unsorted, overlapping bad ranges get coalesced.
+        map.chunk_hashes[2] = Some("done".into());
+        map.bad
+            .push(crate::bad_block::LbaRange { start: 3, count: 1 });
+        map.bad
+            .push(crate::bad_block::LbaRange { start: 3, count: 1 });
+        let mi = MappedImage::open(tf.path(), map).unwrap();
+        assert_eq!(mi.bad.len(), 1);
+        let mut buf = vec![0u8; 2048];
+        let r = mi.read_at(0, &mut buf);
+        assert_eq!(r.status(0), SectorStatus::Unread);
+        assert_eq!(r.status(1), SectorStatus::Unread);
+        assert_eq!(r.status(2), SectorStatus::Good);
+        assert_eq!(r.status(3), SectorStatus::Bad);
+    }
+
+    #[test]
+    fn range_lookup_is_exact_at_boundaries() {
+        let rs = vec![
+            LbaRange { start: 2, count: 2 },
+            LbaRange {
+                start: 10,
+                count: 1,
+            },
+        ];
+        assert!(!in_ranges(&rs, 1));
+        assert!(in_ranges(&rs, 2));
+        assert!(in_ranges(&rs, 3));
+        assert!(!in_ranges(&rs, 4));
+        assert!(in_ranges(&rs, 10));
+        assert!(!in_ranges(&rs, 11));
+        assert!(!in_ranges(&[], 0));
     }
 }

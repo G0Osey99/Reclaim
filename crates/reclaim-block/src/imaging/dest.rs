@@ -24,9 +24,26 @@ pub struct ImageDest {
     frames: Vec<FrameEntry>,
 }
 
+/// Refuse to open an image destination that exists and is not a regular file
+/// (device node, directory, FIFO, or a symlink to any of those). This is the
+/// last line of defence against pointing the only writer at a source device.
+fn refuse_non_regular(path: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if !m.file_type().is_file() => Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "refusing image destination {}: not a regular file",
+                path.display()
+            ),
+        )),
+        _ => Ok(()),
+    }
+}
+
 impl ImageDest {
     /// Create (truncating) a new destination.
     pub fn create(path: &Path, compression: Compression, sparse: bool) -> std::io::Result<Self> {
+        refuse_non_regular(path)?;
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -50,6 +67,7 @@ impl ImageDest {
         sparse: bool,
         frames: Vec<FrameEntry>,
     ) -> std::io::Result<Self> {
+        refuse_non_regular(path)?;
         let file = OpenOptions::new().read(true).write(true).open(path)?;
         let append_cursor = match compression {
             Compression::Zstd => frames
@@ -137,6 +155,19 @@ mod tests {
         assert_eq!(&bytes[0..4], &[1, 2, 3, 4]);
         assert_eq!(&bytes[4..8], &[0, 0, 0, 0]); // hole reads as zero
         assert_eq!(&bytes[8..10], &[9, 9]);
+    }
+
+    #[test]
+    fn refuses_non_regular_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("a-directory");
+        std::fs::create_dir(&sub).unwrap();
+        let err = ImageDest::create(&sub, Compression::None, false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        let err = ImageDest::open_append(&sub, Compression::None, false, Vec::new()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        // A regular file (or a path that does not exist yet) is fine.
+        assert!(ImageDest::create(&dir.path().join("ok.img"), Compression::None, false).is_ok());
     }
 
     #[test]

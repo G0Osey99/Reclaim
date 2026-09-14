@@ -91,9 +91,13 @@ pub fn probe(src: &Arc<dyn BlockSource>) -> Option<Probe> {
 fn cluster_size_from_boot(boot: &[u8], bps: u64) -> Option<u64> {
     let spc_raw = boot.get(13).copied().unwrap_or(0);
     let cluster = if spc_raw <= 0x80 {
-        u64::from(spc_raw).max(1) * bps
+        u64::from(spc_raw).max(1).saturating_mul(bps)
     } else {
-        1u64 << (256 - u32::from(spc_raw))
+        let shift = 256 - u32::from(spc_raw);
+        if shift > 26 {
+            return None;
+        }
+        1u64 << shift
     };
     if cluster == 0 || cluster > 64 * 1024 * 1024 {
         None
@@ -115,14 +119,15 @@ pub fn open(src: Arc<dyn BlockSource>, _probe: Probe) -> Result<Ntfs, FsError> {
     let mft_offset = mft_cluster.saturating_mul(cluster_size);
     let rec_raw = boot.get(0x40).copied().unwrap_or(0) as i8;
     let mft_record_size = if rec_raw >= 0 {
-        (rec_raw as u64).max(1) * cluster_size
+        (rec_raw as u64).max(1).saturating_mul(cluster_size)
     } else {
-        1u64 << (rec_raw.unsigned_abs() as u32)
+        1u64.checked_shl(u32::from(rec_raw.unsigned_abs()))
+            .unwrap_or(0)
     };
     if !(256..=64 * 1024).contains(&mft_record_size) {
         return Err(FsError::Corrupt("implausible MFT record size".into()));
     }
-    let total_bytes = le_u64(&boot, 0x28).saturating_mul(bps);
+    let total_bytes = le_u64(&boot, 0x28).saturating_mul(bps).min(src.len());
     let serial = le_u64(&boot, 0x48);
 
     let mut ntfs = Ntfs {
@@ -170,10 +175,10 @@ impl Ntfs {
         let logical = n.saturating_mul(self.mft_record_size);
         let mut acc = 0u64;
         for e in &self.mft_extents {
-            if logical < acc + e.len {
-                return Some(e.offset + (logical - acc));
+            if logical < acc.saturating_add(e.len) {
+                return Some(e.offset.saturating_add(logical - acc));
             }
-            acc += e.len;
+            acc = acc.saturating_add(e.len);
         }
         None
     }
@@ -392,7 +397,7 @@ impl Ntfs {
         let (name, raw_name, parent) = parsed.best_file_name()?;
         let (created, modified) = parsed.std_info_dates();
         let data = parsed.unnamed_data();
-        let is_dir = parsed.is_directory || data.is_none();
+        let is_dir = parsed.is_directory;
         let (size, extents, compressed, sparse, resident) = match &data {
             Some(d) if d.resident => {
                 // Resident data lives inside the MFT record; point the extent at
@@ -438,14 +443,18 @@ impl Ntfs {
         let step = self.mft_record_size.max(1024);
         let mut off = 0u64;
         let mut found = 0u64;
-        let in_mft =
-            |o: u64, ext: &[Extent]| ext.iter().any(|e| o >= e.offset && o < e.offset + e.len);
-        while off + 4 <= self.total_bytes && (stats.emitted as usize) < opts.max_entries {
+        let in_mft = |o: u64, ext: &[Extent]| {
+            ext.iter()
+                .any(|e| o >= e.offset && o < e.offset.saturating_add(e.len))
+        };
+        while off.saturating_add(4) <= self.total_bytes
+            && (stats.emitted as usize) < opts.max_entries
+        {
             if found >= 100_000 {
                 break;
             }
             if in_mft(off, &self.mft_extents) {
-                off += step;
+                off = off.saturating_add(step);
                 continue;
             }
             let head = read(&self.src, off, 4);
@@ -480,7 +489,7 @@ impl Ntfs {
                     }
                 }
             }
-            off += step;
+            off = off.saturating_add(step);
         }
     }
 

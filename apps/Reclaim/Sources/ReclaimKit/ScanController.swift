@@ -26,12 +26,23 @@ public final class ScanController: ObservableObject {
     private var forwarder: EventForwarder?
     private var lastOpts: ScanOptions?
     private var lastSource: String?
+    /// The helper fd behind an `fd:N:<bsd>` source. The session re-parses that
+    /// spec (and re-dups the fd) for preview/recover, so it must outlive the
+    /// session, not just the `startScan` call.
+    private var device: DeviceFD?
 
     public init() {}
 
-    /// Start a scan of `source` into `sessionDir` (nil = a default dir).
-    public func start(source: String, sessionDir: String?, opts: ScanOptions) {
+    deinit { device?.close() }
+
+    /// Start a scan of `source` into `sessionDir` (nil = a default dir). Pass the
+    /// `DeviceFD` behind an `fd:` spec as `device`; the controller owns it for
+    /// the session's lifetime.
+    public func start(source: String, device: DeviceFD? = nil, sessionDir: String?, opts: ScanOptions) {
         reset()
+        session = nil
+        self.device?.close()
+        self.device = device
         lastOpts = opts
         lastSource = source
         let fwd = EventForwarder { [weak self] ev in self?.handle(ev) }
@@ -41,6 +52,8 @@ public final class ScanController: ObservableObject {
             isScanning = true
         } catch {
             errorMessage = "\(error)"
+            self.device?.close()
+            self.device = nil
         }
     }
 

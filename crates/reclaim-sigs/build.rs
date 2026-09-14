@@ -11,12 +11,14 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Catalog {
     #[serde(default)]
     signature: Vec<RawSig>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawSig {
     id: String,
     family: String,
@@ -45,6 +47,7 @@ struct RawSig {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawHeader {
     pattern: String,
     #[serde(default)]
@@ -52,6 +55,7 @@ struct RawHeader {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawFooter {
     pattern: String,
     #[serde(default = "default_search_max")]
@@ -59,6 +63,7 @@ struct RawFooter {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawSize {
     #[serde(default)]
     min: Option<String>,

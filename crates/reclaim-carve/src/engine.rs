@@ -109,7 +109,9 @@ impl CarveEngine {
         let limit = total.min(128 * 1024 * 1024);
         let mut offsets: Vec<u64> = Vec::new();
         let mut pos: u64 = 0;
-        let overlap = reclaim_sigs::MAX_ANCHOR_LEN.saturating_sub(1);
+        let overlap = reclaim_sigs::MAX_HEADER_SPAN
+            .max(reclaim_sigs::MAX_ANCHOR_LEN)
+            .saturating_sub(1);
         'outer: while pos < limit {
             let want = ((limit - pos) as usize).min(CHUNK + overlap);
             let buf = reader.read(pos, want);
@@ -175,7 +177,9 @@ impl CarveEngine {
         };
         let start = resume_from.max(scan_start);
         let total = scan_end.saturating_sub(scan_start);
-        let overlap = reclaim_sigs::MAX_ANCHOR_LEN.saturating_sub(1);
+        let overlap = reclaim_sigs::MAX_HEADER_SPAN
+            .max(reclaim_sigs::MAX_ANCHOR_LEN)
+            .saturating_sub(1);
 
         let mut pos = start;
         let mut found_count: u64 = 0;

@@ -35,7 +35,7 @@ echo "== fuzzing each target for ${DUR}s (parallel ${PAR}) =="
 run_one() {
   local t="$1" dur="$2" bindir="$3" out="$4" fdir="$5"
   mkdir -p "$fdir/corpus/$t"
-  if "$bindir/$t" -max_total_time="$dur" -rss_limit_mb=4096 -print_final_stats=1 \
+  if "$bindir/$t" -max_total_time="$dur" -rss_limit_mb=4096 -print_final_stats=1 -max_len=1048576 \
        "$fdir/corpus/$t" >"$out/$t.log" 2>&1; then
     echo "PASS  $t"
   else

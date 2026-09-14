@@ -88,6 +88,24 @@ impl RawDevice {
     /// independent handle and the caller may close its own. `label` names the
     /// source id (typically the BSD name).
     pub fn from_fd(fd: RawFd, label: &str) -> Result<Self, BlockError> {
+        // Verify the adopted descriptor really is read-only before touching it:
+        // the helper is trusted to open O_RDONLY, but this is the one place a
+        // writable handle could enter the read-only core.
+        // SAFETY: F_GETFL only reads the descriptor's status flags; an invalid
+        // fd yields -1 (EBADF) rather than undefined behaviour.
+        let fl = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if fl < 0 {
+            return Err(BlockError::io(
+                format!("fd:{label}"),
+                std::io::Error::last_os_error(),
+            ));
+        }
+        if (fl & libc::O_ACCMODE) != libc::O_RDONLY {
+            return Err(BlockError::Geometry(format!(
+                "adopted fd for {label} is not open read-only (flags {fl:#x})"
+            )));
+        }
+        open_log::record_open(Path::new(&format!("fd:{label}")), fl);
         // SAFETY: dup(2) returns a fresh owned fd, or -1 on error.
         let raw: RawFd = unsafe { libc::dup(fd) };
         if raw < 0 {
@@ -161,8 +179,35 @@ impl BlockSource for RawDevice {
 
         // Fast path: one pread of the whole available region. Only on a hard
         // error do we drop to per-sector isolation, so healthy reads stay fast.
+        // Once latched, the rest of the request stays per-sector: re-issuing
+        // the whole multi-MiB remainder would just fail again on the same
+        // sector (and hammer a failing drive).
         let mut done = 0usize;
+        let mut per_sector = false;
         while done < avail {
+            if per_sector {
+                let sec = done / ss_usize;
+                let sec_start = sec * ss_usize;
+                let sec_end = core::cmp::min(sec_start + ss_usize, avail);
+                let Some(sdst) = buf.get_mut(sec_start..sec_end) else {
+                    break;
+                };
+                match pread_raw(fd, sdst, offset + sec_start as u64) {
+                    // Only a complete sector counts; a short read would
+                    // otherwise livelock at the same offset.
+                    Ok(n) if n == sdst.len() => done = sec_end,
+                    Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    r => {
+                        if let Err(e) = &r {
+                            self.note_error(e);
+                        }
+                        res.mark_bad(sec);
+                        sdst.fill(0);
+                        done = sec_end;
+                    }
+                }
+                continue;
+            }
             let Some(dst) = buf.get_mut(done..avail) else {
                 break;
             };
@@ -174,27 +219,7 @@ impl BlockSource for RawDevice {
                     // A device-gone error (ENXIO/ENODEV/EBADF) latches `vanished`
                     // so the scan can checkpoint and exit resumably.
                     self.note_error(e);
-                    // Isolate the offending sector, mark it bad, and continue.
-                    let sec = done / ss_usize;
-                    let sec_start = sec * ss_usize;
-                    let sec_end = core::cmp::min(sec_start + ss_usize, avail);
-                    let recovered = match buf.get_mut(sec_start..sec_end) {
-                        Some(sdst) => pread_raw(fd, sdst, offset + sec_start as u64).ok(),
-                        None => None,
-                    };
-                    match recovered {
-                        Some(n) if n > 0 => {
-                            done = sec_start + n;
-                        }
-                        _ => {
-                            res.mark_bad(sec);
-                            // Re-zero the sector we could not read.
-                            if let Some(sdst) = buf.get_mut(sec_start..sec_end) {
-                                sdst.fill(0);
-                            }
-                            done = sec_end;
-                        }
-                    }
+                    per_sector = true;
                 }
             }
         }
@@ -325,5 +350,18 @@ mod tests {
         assert!(r.any_bad());
         assert_eq!(&buf[..512], &vec![0x5Au8; 512][..]);
         assert!(buf[512..].iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn from_fd_refuses_writable_fd() {
+        let tmp = temp(&[0u8; 1024]);
+        // NamedTempFile's own handle is O_RDWR.
+        let err = RawDevice::from_fd(tmp.as_file().as_raw_fd(), "rw").unwrap_err();
+        assert!(matches!(err, BlockError::Geometry(_)), "{err:?}");
+        // A closed / invalid fd is refused too.
+        assert!(RawDevice::from_fd(-1, "bad").is_err());
+        // O_RDONLY is accepted.
+        let f = std::fs::File::open(tmp.path()).unwrap();
+        assert!(RawDevice::from_fd(f.as_raw_fd(), "ro").is_ok());
     }
 }

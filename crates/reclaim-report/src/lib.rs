@@ -58,7 +58,7 @@ impl Summary {
         for r in records {
             *by_family.entry(r.family.clone()).or_insert(0) += 1;
             *by_validity.entry(r.validity.clone()).or_insert(0) += 1;
-            total_bytes += r.len;
+            total_bytes = total_bytes.saturating_add(r.len);
         }
         Summary {
             source_id: source_id.to_string(),
@@ -129,10 +129,16 @@ fn render_json(records: &[CarvedRecord], summary: &Summary) -> String {
 }
 
 fn csv_escape(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
+    // Neutralize spreadsheet formula injection, then quote per RFC 4180.
+    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{s}")
     } else {
         s.to_string()
+    };
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
     }
 }
 
@@ -224,6 +230,18 @@ mod tests {
             extents_json: None,
             merged: false,
         }
+    }
+
+    #[test]
+    fn csv_escape_neutralizes_formulas_and_quotes() {
+        assert_eq!(csv_escape("=SUM(A1)"), "'=SUM(A1)");
+        assert_eq!(csv_escape("+1"), "'+1");
+        assert_eq!(csv_escape("-1"), "'-1");
+        assert_eq!(csv_escape("@x"), "'@x");
+        assert_eq!(csv_escape("a,b"), "\"a,b\"");
+        assert_eq!(csv_escape("say \"hi\""), "\"say \"\"hi\"\"\"");
+        assert_eq!(csv_escape("l1\rl2"), "\"l1\rl2\"");
+        assert_eq!(csv_escape("plain"), "plain");
     }
 
     #[test]
