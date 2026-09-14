@@ -103,7 +103,7 @@ struct RecoverSheet: View {
                 Label("Recover", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(dest.isEmpty || running || verdict?.canRecover == false)
+            .disabled(dest.isEmpty || running || verdict?.canRecover != true)
         }
     }
 
@@ -147,12 +147,18 @@ struct RecoverSheet: View {
     }
 
     private func revalidate() {
-        guard !dest.isEmpty else { check = nil; return }
-        check = results.checkDestination(dest)
+        guard !dest.isEmpty else { check = nil; errorMessage = nil; return }
+        do {
+            check = try results.checkDestination(dest)
+            errorMessage = nil
+        } catch {
+            check = nil
+            errorMessage = "Destination check failed: \(error)"
+        }
     }
 
     private func run() {
-        guard verdict?.canRecover != false else { return }
+        guard verdict?.canRecover == true else { return }
         running = true
         errorMessage = nil
         let opts = Options.recover(

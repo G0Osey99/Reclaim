@@ -90,40 +90,55 @@ pub fn image(
     cancel: &AtomicBool,
 ) -> std::io::Result<ImageOutcome> {
     let sector = src.sector_size().max(1);
-    let chunk_size = round_up(opts.chunk_size.max(sector), sector);
     let size = src.len();
     let source_id = src.id().as_str().to_string();
 
-    // Load or create the map.
+    // Load or create the map. On resume the map is authoritative: a map that
+    // exists but cannot be loaded is an error (never silently start over and
+    // truncate the partial image), and chunk size / hash / compression are
+    // properties of the image on disk, not of this invocation.
     let mut map = if opts.resume && map_path.exists() {
-        match ImageMap::load(map_path) {
-            Ok(m) if m.source_id == source_id && m.size == size => m,
-            _ => ImageMap::new(
-                source_id.clone(),
-                size,
-                sector,
-                chunk_size,
-                opts.hash_algo,
-                opts.compression,
-            ),
+        let m = ImageMap::load(map_path)?;
+        if m.source_id != source_id || m.size != size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "resume: map {} is for source {} ({} bytes), not {} ({} bytes)",
+                    map_path.display(),
+                    m.source_id,
+                    m.size,
+                    source_id,
+                    size
+                ),
+            ));
         }
+        if m.chunk_size == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "resume: map has zero chunk size",
+            ));
+        }
+        m
     } else {
         ImageMap::new(
             source_id.clone(),
             size,
             sector,
-            chunk_size,
+            round_up(opts.chunk_size.max(sector), sector),
             opts.hash_algo,
             opts.compression,
         )
     };
+    let chunk_size = map.chunk_size;
+    let hash_algo = map.hash_algo;
+    let compression = map.compression;
 
     let resuming =
         opts.resume && (!map.frames.is_empty() || map.chunk_hashes.iter().any(Option::is_some));
     let mut dest = if resuming && out_path.exists() {
-        ImageDest::open_append(out_path, opts.compression, opts.sparse, map.frames.clone())?
+        ImageDest::open_append(out_path, compression, opts.sparse, map.frames.clone())?
     } else {
-        ImageDest::create(out_path, opts.compression, opts.sparse)?
+        ImageDest::create(out_path, compression, opts.sparse)?
     };
 
     let num = map.num_chunks();
@@ -182,7 +197,7 @@ pub fn image(
         }
 
         if let Some(slot) = map.chunk_hashes.get_mut(i) {
-            *slot = Some(hash_bytes(opts.hash_algo, &buf));
+            *slot = Some(hash_bytes(hash_algo, &buf));
         }
         dest.write_chunk(offset, &buf)?;
 
@@ -299,7 +314,7 @@ fn round_up(v: u32, m: u32) -> u32 {
     v.div_ceil(m).saturating_mul(m)
 }
 
-fn coalesce(runs: &mut Vec<LbaRange>) {
+pub(crate) fn coalesce(runs: &mut Vec<LbaRange>) {
     if runs.len() < 2 {
         return;
     }
@@ -447,5 +462,87 @@ mod tests {
         assert!(outcome.complete);
         assert!(outcome.had_bad);
         assert_eq!(outcome.bad_sectors, 1);
+    }
+
+    #[test]
+    fn resume_with_corrupt_map_errors() {
+        let data = vec![1u8; 4096];
+        let (_f, src) = make_src(&data);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("c.img");
+        let mapp = dir.path().join("c.map");
+        {
+            use std::io::Write;
+            let mut f = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+            f.write_all(b"{ not json").unwrap();
+            f.persist(&mapp).unwrap();
+        }
+        let opts = ImageOptions {
+            chunk_size: 1024,
+            resume: true,
+            ..Default::default()
+        };
+        let cancel = AtomicBool::new(false);
+        let err = image(&src, &out, &mapp, &opts, &mut |_p| {}, &cancel).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(!out.exists(), "a failed resume must not touch the image");
+        // A map for a different source is rejected the same way.
+        let other = ImageMap::new(
+            "other".into(),
+            4096,
+            512,
+            1024,
+            HashAlgo::Blake3,
+            Compression::None,
+        );
+        other.save(&mapp).unwrap();
+        let err = image(&src, &out, &mapp, &opts, &mut |_p| {}, &cancel).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn resume_honors_map_chunk_size() {
+        let data: Vec<u8> = (0..8192u32).map(|i| (i * 3 % 256) as u8).collect();
+        let (_f, src) = make_src(&data);
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("r.img");
+        let mapp = dir.path().join("r.map");
+        // First run: 1 KiB chunks, cancelled after the first chunk.
+        let opts = ImageOptions {
+            chunk_size: 1024,
+            ..Default::default()
+        };
+        let cancel = AtomicBool::new(false);
+        let outcome = image(
+            &src,
+            &out,
+            &mapp,
+            &opts,
+            &mut |_p| cancel.store(true, Ordering::Relaxed),
+            &cancel,
+        )
+        .unwrap();
+        assert!(!outcome.complete);
+        let partial = ImageMap::load(&mapp).unwrap();
+        assert!(partial.is_chunk_done(0));
+        assert!(!partial.is_chunk_done(1));
+        // Resume asking for a different chunk size / hash: the map wins.
+        let opts = ImageOptions {
+            chunk_size: 4096,
+            hash_algo: HashAlgo::Sha256,
+            resume: true,
+            ..Default::default()
+        };
+        let cancel = AtomicBool::new(false);
+        let outcome = image(&src, &out, &mapp, &opts, &mut |_p| {}, &cancel).unwrap();
+        assert!(outcome.complete);
+        let done = ImageMap::load(&mapp).unwrap();
+        assert_eq!(done.chunk_size, 1024);
+        assert_eq!(done.hash_algo, HashAlgo::Blake3);
+        assert_eq!(done.num_chunks(), 8);
+        assert_eq!(std::fs::read(&out).unwrap(), data);
+        let rep = verify_image(&out, &mapp).unwrap();
+        assert!(rep.whole_ok);
+        assert_eq!(rep.chunk_mismatches, 0);
     }
 }

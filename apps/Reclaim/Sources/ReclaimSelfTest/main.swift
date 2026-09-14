@@ -7,6 +7,7 @@
 
 import Foundation
 import ReclaimCore
+import ReclaimHelperProtocol
 import ReclaimKit
 
 var failures = 0
@@ -124,6 +125,33 @@ do {
     check(formatDuration(45) == "45 s", "45 s")
     check(formatDuration(600) == "10 min", "600 s → 10 min")
     check(formatDuration(0) == "—", "zero → dash")
+}
+
+section("Helper: BSD-name validation")
+do {
+    for good in ["disk3", "disk3s5", "rdisk3s1s2"] {
+        check(isValidBSDName(good), "accepts \(good)")
+    }
+    let long = "disk" + String(repeating: "1", count: 36)
+    for bad in ["disk", "disk\u{0663}", "../disk1", "disk3/", long] {
+        check(!isValidBSDName(bad), "rejects \(bad.debugDescription)")
+    }
+}
+
+section("Helper: code-signing requirement")
+do {
+    let both = reclaimCodeRequirement(teamID: "ABCDE12345", identifier: "com.reclaim.app")
+    check(
+        both == "identifier \"com.reclaim.app\" and anchor apple generic and certificate leaf[subject.OU] = \"ABCDE12345\"",
+        "team + identifier requirement")
+    check(
+        reclaimCodeRequirement(teamID: "ABCDE12345", identifier: nil)
+            == reclaimCodeRequirement(teamID: "ABCDE12345"),
+        "nil identifier falls back to the team-only requirement")
+    check(
+        reclaimCodeRequirement(teamID: nil, identifier: "ReclaimHelper")
+            == "identifier \"ReclaimHelper\" and anchor apple generic",
+        "identifier without a team")
 }
 
 section("ScanPlanModel (preset ⇄ edit)")

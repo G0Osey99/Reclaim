@@ -26,11 +26,18 @@ public final class AppModel: ObservableObject {
     public init() {}
 
     /// Enumerate sources (doc 08 §1). On non-macOS this throws; the UI shows it.
+    /// Enumeration talks to IOKit/DiskArbitration, so it runs off the main
+    /// thread and the result is applied back on the main actor.
     public func refreshSources() {
-        do {
-            sources = try listSources()
-        } catch {
-            errorMessage = "Could not list sources: \(error)"
+        Task { [weak self] in
+            let result: Result<[SourceSummary], Error> = await Task.detached {
+                do { return .success(try listSources()) } catch { return .failure(error) }
+            }.value
+            guard let self else { return }
+            switch result {
+            case .success(let s): self.sources = s
+            case .failure(let e): self.errorMessage = "Could not list sources: \(e)"
+            }
         }
         helper.refreshStatus()
         refreshSessions()

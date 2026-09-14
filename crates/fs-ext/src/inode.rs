@@ -26,6 +26,8 @@ const S_IFDIR: u16 = 0x4000;
 const MAX_FILE_BLOCKS: usize = 8 * 1024 * 1024;
 /// Cap on extent-tree interior depth.
 const MAX_EXTENT_DEPTH: u16 = 5;
+/// Cap on block-map nodes (extent index blocks + indirect blocks) read per file.
+const MAX_MAP_NODES: u32 = 4096;
 
 /// A parsed inode (only the fields the engine uses).
 #[derive(Clone, Debug)]
@@ -84,10 +86,11 @@ impl Inode {
     /// The file's byte extents (volume-relative), trimmed to the logical size.
     pub fn extents(&self, src: &Arc<dyn BlockSource>, sb: &Superblock) -> Vec<Extent> {
         let mut blocks: Vec<(u64, u64)> = Vec::new(); // (logical_block, physical_block)
+        let mut budget = MAX_MAP_NODES;
         if self.flags & EXTENTS_FL != 0 {
-            collect_extent_tree(src, sb, &self.i_block, 0, &mut blocks);
+            collect_extent_tree(src, sb, &self.i_block, 0, &mut budget, &mut blocks);
         } else {
-            collect_classic(src, sb, &self.i_block, &mut blocks);
+            collect_classic(src, sb, &self.i_block, &mut budget, &mut blocks);
         }
         runs_to_extents(sb, &mut blocks, self.size)
     }
@@ -100,18 +103,20 @@ fn collect_extent_tree(
     sb: &Superblock,
     node: &[u8],
     depth_guard: u16,
+    budget: &mut u32,
     out: &mut Vec<(u64, u64)>,
 ) {
-    if depth_guard > MAX_EXTENT_DEPTH || out.len() > MAX_FILE_BLOCKS {
+    if depth_guard > MAX_EXTENT_DEPTH || out.len() > MAX_FILE_BLOCKS || *budget == 0 {
         return;
     }
+    *budget -= 1;
     if le_u16(node, 0) != EXTENT_MAGIC {
         return;
     }
     let entries = le_u16(node, 2);
     let depth = le_u16(node, 6);
     let max = le_u16(node, 4);
-    if entries > max.max(entries) {
+    if entries > max || usize::from(max) > node.len().saturating_sub(12) / 12 {
         return;
     }
     for i in 0..entries as usize {
@@ -145,7 +150,7 @@ fn collect_extent_tree(
                 child.saturating_mul(sb.block_size),
                 sb.block_size as usize,
             );
-            collect_extent_tree(src, sb, &block, depth_guard + 1, out);
+            collect_extent_tree(src, sb, &block, depth_guard + 1, budget, out);
         }
     }
 }
@@ -155,6 +160,7 @@ fn collect_classic(
     src: &Arc<dyn BlockSource>,
     sb: &Superblock,
     i_block: &[u8],
+    budget: &mut u32,
     out: &mut Vec<(u64, u64)>,
 ) {
     let mut logical = 0u64;
@@ -166,27 +172,30 @@ fn collect_classic(
     let ptrs_per_block = sb.block_size / 4;
     // Single indirect.
     let si = u64::from(le_u32(i_block, 48));
-    walk_indirect(src, sb, si, 1, ptrs_per_block, &mut logical, out);
+    walk_indirect(src, sb, si, 1, ptrs_per_block, budget, &mut logical, out);
     // Double indirect.
     let di = u64::from(le_u32(i_block, 52));
-    walk_indirect(src, sb, di, 2, ptrs_per_block, &mut logical, out);
+    walk_indirect(src, sb, di, 2, ptrs_per_block, budget, &mut logical, out);
     // Triple indirect.
     let ti = u64::from(le_u32(i_block, 56));
-    walk_indirect(src, sb, ti, 3, ptrs_per_block, &mut logical, out);
+    walk_indirect(src, sb, ti, 3, ptrs_per_block, budget, &mut logical, out);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_indirect(
     src: &Arc<dyn BlockSource>,
     sb: &Superblock,
     block: u64,
     level: u8,
     ppb: u64,
+    budget: &mut u32,
     logical: &mut u64,
     out: &mut Vec<(u64, u64)>,
 ) {
-    if block == 0 || out.len() > MAX_FILE_BLOCKS {
+    if block == 0 || out.len() > MAX_FILE_BLOCKS || *budget == 0 {
         return;
     }
+    *budget -= 1;
     let data = read(
         src,
         block.saturating_mul(sb.block_size),
@@ -198,7 +207,7 @@ fn walk_indirect(
         if level == 1 {
             push_data_block(logical, b, out);
         } else {
-            walk_indirect(src, sb, b, level - 1, ppb, logical, out);
+            walk_indirect(src, sb, b, level - 1, ppb, budget, logical, out);
         }
         if out.len() > MAX_FILE_BLOCKS {
             return;

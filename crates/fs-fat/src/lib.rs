@@ -26,9 +26,14 @@ use reclaim_fs_core::{
     Bitmap, Entry, EntryKind, EntrySink, EntryState, Extent, FileSystem, FsError, Probe, WalkOpts,
     WalkStats,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 
 const DELETED: u8 = 0xE5;
+/// Cap on a single directory read (DoS guard on crafted chains).
+const MAX_DIR_BYTES: u64 = 8 * 1024 * 1024;
+/// Cap on the cached FAT #0; entries beyond it are read directly from disk.
+const MAX_FAT_CACHE: u64 = 64 * 1024 * 1024;
 const ATTR_LFN: u8 = 0x0F;
 const ATTR_DIRECTORY: u8 = 0x10;
 const ATTR_VOLUME_ID: u8 = 0x08;
@@ -248,11 +253,7 @@ pub fn open(src: Arc<dyn BlockSource>, _probe: Probe) -> Result<FatFs, FsError> 
     let total_bytes = bpb.total_sectors * u64::from(bytes_per_sector);
 
     // Cache FAT #0 (bounded to 64 MiB) for chain walking and the bitmap.
-    let fat0 = read(
-        &src,
-        fat_offset,
-        fat_size_bytes.min(64 * 1024 * 1024) as usize,
-    );
+    let fat0 = read(&src, fat_offset, fat_size_bytes.min(MAX_FAT_CACHE) as usize);
     // Compare the two FATs (sample).
     let fats_match = if bpb.num_fats >= 2 {
         let fat1 = read(
@@ -303,15 +304,35 @@ impl FatFs {
         )
     }
 
-    /// Read the FAT entry for `cluster` from the cached FAT #0.
+    /// `n` bytes of FAT #0 at byte index `idx`: from the cache when present,
+    /// else a direct bounded read (the cache is capped at [`MAX_FAT_CACHE`]).
+    fn fat_bytes(&self, idx: u64, n: usize) -> Vec<u8> {
+        let end = idx.saturating_add(n as u64);
+        if let Some(b) = usize::try_from(idx)
+            .ok()
+            .zip(usize::try_from(end).ok())
+            .and_then(|(s, e)| self.fat0.get(s..e))
+        {
+            return b.to_vec();
+        }
+        if idx < self.fat_size_bytes {
+            return read(&self.src, self.fat_offset.saturating_add(idx), n);
+        }
+        vec![0u8; n]
+    }
+
+    /// Read the FAT entry for `cluster` from FAT #0.
     fn fat_entry(&self, cluster: u32) -> u32 {
         match self.kind {
-            FatKind::Fat32 => le_u32(&self.fat0, cluster as usize * 4) & self.kind.mask(),
-            FatKind::Fat16 => u32::from(le_u16(&self.fat0, cluster as usize * 2)),
+            FatKind::Fat32 => {
+                le_u32(&self.fat_bytes(u64::from(cluster) * 4, 4), 0) & self.kind.mask()
+            }
+            FatKind::Fat16 => u32::from(le_u16(&self.fat_bytes(u64::from(cluster) * 2, 2), 0)),
             FatKind::Fat12 => {
-                let idx = cluster as usize + cluster as usize / 2;
-                let lo = self.fat0.get(idx).copied().unwrap_or(0) as u32;
-                let hi = self.fat0.get(idx + 1).copied().unwrap_or(0) as u32;
+                let idx = u64::from(cluster) + u64::from(cluster) / 2;
+                let b = self.fat_bytes(idx, 2);
+                let lo = b.first().copied().unwrap_or(0) as u32;
+                let hi = b.get(1).copied().unwrap_or(0) as u32;
                 let v = lo | (hi << 8);
                 if cluster & 1 == 0 {
                     v & 0x0FFF
@@ -346,7 +367,19 @@ impl FatFs {
 
     /// Build an allocation bitmap from the FAT (cluster allocated iff FAT != 0).
     fn fat_bitmap(&self) -> Option<Bitmap> {
-        let n = self.count_of_clusters;
+        // Bound by what the FAT can actually describe and a hard cap.
+        let entry_bytes: u64 = match self.kind {
+            FatKind::Fat32 => 4,
+            FatKind::Fat16 => 2,
+            FatKind::Fat12 => 1, // 1.5 bytes; conservative
+        };
+        let describable = (self.fat_size_bytes / entry_bytes).saturating_sub(2);
+        let n = u32::try_from(
+            u64::from(self.count_of_clusters)
+                .min(describable)
+                .min(128 << 20),
+        )
+        .unwrap_or(0);
         if n == 0 {
             return None;
         }
@@ -385,16 +418,17 @@ impl FatFs {
                 self.root_region_len.min(16 * 1024 * 1024) as usize,
             );
         }
-        let clusters = self.chain(first_cluster, 1 << 20);
+        let max_clusters = (MAX_DIR_BYTES / self.cluster_size.max(1)).saturating_add(1);
+        let clusters = self.chain(first_cluster, max_clusters);
         let mut buf = Vec::new();
         for c in clusters {
             let Some(off) = self.cluster_offset(c) else {
                 break;
             };
-            buf.extend_from_slice(&read(&self.src, off, self.cluster_size as usize));
-            if buf.len() as u64 > 256 * 1024 * 1024 {
+            if buf.len() as u64 >= MAX_DIR_BYTES {
                 break;
             }
+            buf.extend_from_slice(&read(&self.src, off, self.cluster_size as usize));
         }
         buf
     }
@@ -450,11 +484,21 @@ impl FatFs {
         if self.count_of_clusters <= 0xFFFF {
             return first;
         }
+        // Keep the original cluster when its head is already non-empty.
+        if let Some(off) = self.cluster_offset(first) {
+            if read(&self.src, off, 16).iter().any(|b| *b != 0) {
+                return first;
+            }
+        }
         let mut best = first;
         let mut best_nonzero = 0usize;
-        let mut k = 0u32;
-        while (u32::from(lo) | (k << 16)) < self.count_of_clusters + 2 && k < 256 {
+        let mut k = 1u32;
+        while (u32::from(lo) | (k << 16)) < self.count_of_clusters.saturating_add(2) && k < 256 {
             let cand = u32::from(lo) | (k << 16);
+            if self.fat_entry(cand) != 0 {
+                k += 1;
+                continue; // only currently-free clusters are candidates
+            }
             if let Some(off) = self.cluster_offset(cand) {
                 let head = read(&self.src, off, 16);
                 let nz = head.iter().filter(|b| **b != 0).count();
@@ -479,11 +523,17 @@ impl FatFs {
         opts: &WalkOpts,
         bitmap: Option<&Bitmap>,
         stats: &mut WalkStats,
+        visited: &mut HashSet<u32>,
     ) {
         if depth > 64 || stats.emitted as usize >= opts.max_entries {
             return;
         }
+        if !is_fixed_root && !visited.insert(first_cluster) {
+            return;
+        }
         let dir = self.read_directory(first_cluster, is_fixed_root);
+        // Subdirectories to descend into once this directory's buffer is dropped.
+        let mut subdirs: Vec<(u32, String)> = Vec::new();
         // Pre-scan live SFN names for first-char inference on deleted siblings.
         let siblings = collect_sfn_names(&dir);
 
@@ -580,16 +630,7 @@ impl FatFs {
                 // Recurse into live subdirectories only (deleted dir chains are
                 // unreliable and risk loops).
                 if !deleted && first >= 2 {
-                    self.walk_dir(
-                        first,
-                        false,
-                        &child_path,
-                        depth + 1,
-                        sink,
-                        opts,
-                        bitmap,
-                        stats,
-                    );
+                    subdirs.push((first, child_path));
                 }
             } else if include {
                 let (extents, assumed) = self.resolve_extents(first, size, deleted);
@@ -624,6 +665,20 @@ impl FatFs {
                 emit(sink, stats, e);
             }
             i += 32;
+        }
+        drop(dir);
+        for (first, child_path) in subdirs {
+            self.walk_dir(
+                first,
+                false,
+                &child_path,
+                depth + 1,
+                sink,
+                opts,
+                bitmap,
+                stats,
+                visited,
+            );
         }
     }
 }
@@ -661,6 +716,7 @@ impl FileSystem for FatFs {
             opts,
             bitmap.as_ref(),
             &mut stats,
+            &mut HashSet::new(),
         );
         let _ = (
             self.fat_offset,

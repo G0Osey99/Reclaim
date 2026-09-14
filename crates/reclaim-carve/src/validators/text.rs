@@ -68,8 +68,9 @@ pub fn validate(ctx: &Ctx) -> Verdict {
                 }
                 Some(n) => {
                     // Sequence straddles the window; re-read from here.
-                    if want == WIN {
-                        break;
+                    if want == WIN && i > 0 {
+                        pos += i as u64;
+                        continue 'outer;
                     }
                     let _ = n;
                     pos += i as u64;

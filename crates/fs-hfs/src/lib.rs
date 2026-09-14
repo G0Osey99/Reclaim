@@ -148,18 +148,25 @@ impl Hfs {
     }
 
     /// Map a byte offset within a fork to a device offset via its extents.
-    fn fork_device_offset(&self, extents: &[ExtentDescriptor], byte_off: u64) -> Option<u64> {
+    /// Also returns the bytes remaining in that extent from the mapped offset,
+    /// so a caller never reads through an extent boundary into unrelated blocks.
+    fn fork_device_offset(
+        &self,
+        extents: &[ExtentDescriptor],
+        byte_off: u64,
+    ) -> Option<(u64, u64)> {
         let bs = self.bs();
         let mut consumed: u64 = 0;
         for e in extents {
             let ext_bytes = u64::from(e.block_count).saturating_mul(bs);
             if byte_off < consumed.saturating_add(ext_bytes) {
                 let within = byte_off - consumed;
-                return Some(
+                return Some((
                     u64::from(e.start_block)
                         .saturating_mul(bs)
                         .saturating_add(within),
-                );
+                    ext_bytes - within,
+                ));
             }
             consumed = consumed.saturating_add(ext_bytes);
         }
@@ -174,11 +181,14 @@ impl Hfs {
         let mut done = 0usize;
         while done < len {
             let want_off = byte_off + done as u64;
-            let Some(dev) = self.fork_device_offset(extents, want_off) else {
+            let Some((dev, left)) = self.fork_device_offset(extents, want_off) else {
                 break;
             };
-            // How many bytes remain in the current extent from `dev`?
-            let chunk = (len - done).min(1 << 20);
+            // Clamp to what remains in the current extent from `dev`.
+            let chunk = (len - done).min(left.min(1 << 20) as usize);
+            if chunk == 0 {
+                break;
+            }
             let bytes = read(&self.src, dev, chunk);
             let n = bytes.len().min(len - done);
             if n == 0 {
@@ -212,9 +222,14 @@ impl Hfs {
 
     /// Parse the record offsets at the end of a node (last u16 = record 0).
     fn record_offsets(node: &[u8], node_size: u32, num_records: u16) -> Vec<usize> {
-        let mut offs = Vec::with_capacity(num_records as usize);
-        for i in 0..num_records as usize {
-            let pos = node_size as usize - 2 * (i + 1);
+        // A node holds at most (node_size - 14) / 2 offsets after its 14-byte
+        // descriptor; cap there so a crafted numRecords cannot underflow `pos`.
+        let max = ((node_size as usize).saturating_sub(14) / 2).min(num_records as usize);
+        let mut offs = Vec::with_capacity(max);
+        for i in 0..max {
+            let Some(pos) = (node_size as usize).checked_sub(2 * (i + 1)) else {
+                break;
+            };
             offs.push(be_u16(node, pos) as usize);
         }
         offs

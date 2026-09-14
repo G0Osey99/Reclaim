@@ -60,11 +60,16 @@ pub fn validate(ctx: &Ctx) -> Verdict {
                 let score = if saw_sof && saw_sos { 96 } else { 82 };
                 return Verdict::accept(len, Validity::Full, score).with_meta(meta);
             }
-            0x01 | 0xFF => {
+            0xFF => {
+                // Fill byte: only one 0xFF is consumed.
+                pos += 1;
+            }
+            0x01 | 0xD0..=0xD7 => {
                 pos += 2;
             }
-            0xD0..=0xD7 => {
-                pos += 2;
+            0xD8 => {
+                // A second SOI is the next file: this one ended here.
+                return truncated(pos, saw_sof);
             }
             0xDA => {
                 // SOS: skip its header, then scan entropy data for next marker.

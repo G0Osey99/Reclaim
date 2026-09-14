@@ -20,3 +20,6 @@ crates/reclaim-cli/src/commands/recover.rs
 crates/reclaim-cli/src/commands/report.rs
 crates/reclaim-cli/src/commands/preview.rs
 crates/reclaim-cli/src/commands/image.rs
+# Phase 6 — `reclaim docgen` writes man pages / completions / cli.md into a
+# user-chosen output directory (build-time documentation only; never a device).
+crates/reclaim-cli/src/docgen.rs

@@ -9,14 +9,8 @@ import ReclaimHelperProtocol
 
 let helperVersion = "1.0.0"
 
-/// Only ever act on a real BSD disk node: `disk3`, `disk3s5`, `rdisk3s1s2`.
-func isValidBSDName(_ name: String) -> Bool {
-    let n = name.hasPrefix("r") ? String(name.dropFirst()) : name
-    guard n.hasPrefix("disk") else { return false }
-    let rest = n.dropFirst(4)
-    guard let first = rest.first, first.isNumber else { return false }
-    return rest.allSatisfy { $0.isNumber || $0 == "s" }
-}
+// A peer closing its end of a pipe must not kill the daemon.
+signal(SIGPIPE, SIG_IGN)
 
 /// Run a tool and capture stdout; passphrase (if any) is fed on stdin.
 @discardableResult
@@ -26,7 +20,8 @@ func run(_ launchPath: String, _ args: [String], stdin: String? = nil) -> (Int32
     p.arguments = args
     let outPipe = Pipe()
     p.standardOutput = outPipe
-    p.standardError = Pipe()
+    let errPipe = Pipe()
+    p.standardError = errPipe
     if let s = stdin {
         let inPipe = Pipe()
         p.standardInput = inPipe
@@ -37,6 +32,8 @@ func run(_ launchPath: String, _ args: [String], stdin: String? = nil) -> (Int32
         do { try p.run() } catch { return (-1, "\(error)") }
     }
     let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+    // Drain stderr too so a chatty tool can never block on a full pipe.
+    _ = errPipe.fileHandleForReading.readDataToEndOfFile()
     p.waitUntilExit()
     return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
 }
@@ -53,9 +50,16 @@ final class HelperService: NSObject, ReclaimHelperXPC {
         }
         let bare = bsdName.hasPrefix("r") ? String(bsdName.dropFirst()) : bsdName
         let node = "/dev/r\(bare)"
-        let fd = open(node, O_RDONLY)
+        let fd = open(node, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         if fd < 0 {
             reply(nil, "open \(node): \(String(cString: strerror(errno)))")
+            return
+        }
+        // Only ever hand out a character device (the raw disk node).
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFCHR else {
+            close(fd)
+            reply(nil, "\(node) is not a character device")
             return
         }
         // The FileHandle owns the fd; XPC dup's it into the app process.
@@ -91,7 +95,7 @@ final class HelperService: NSObject, ReclaimHelperXPC {
         }
         let (code, out) = run(
             "/usr/sbin/diskutil",
-            ["apfs", "unlockVolume", volume, "-stdinpassphrase"],
+            ["apfs", "unlockVolume", volume, "-nomount", "-stdinpassphrase"],
             stdin: passphrase
         )
         reply(code == 0, code == 0 ? nil : out)
@@ -100,16 +104,14 @@ final class HelperService: NSObject, ReclaimHelperXPC {
 
 final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection c: NSXPCConnection) -> Bool {
+        // Fail closed: pin the caller to our team *and* the app's bundle id
+        // (doc 03 §7 "both ways"). With no team baked in (ad-hoc build) there is
+        // nothing to pin against, so refuse rather than serve any caller as root.
+        guard let team = reclaimConfiguredTeamID() else { return false }
+        c.setCodeSigningRequirement(
+            reclaimCodeRequirement(teamID: team, identifier: reclaimAppBundleIdentifier))
         c.exportedInterface = NSXPCInterface(with: ReclaimHelperXPC.self)
         c.exportedObject = HelperService()
-        // Pin the caller to the same team when one is baked in at build time
-        // (doc 03 §7 "both ways"). Ad-hoc builds have no team; the check is then
-        // best-effort and documented as non-enforcing (phase-5 log).
-        if let team = reclaimConfiguredTeamID() {
-            if #available(macOS 13.0, *) {
-                c.setCodeSigningRequirement(reclaimCodeRequirement(teamID: team))
-            }
-        }
         c.resume()
         return true
     }

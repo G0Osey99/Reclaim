@@ -106,7 +106,7 @@ pub fn run(args: &ScanArgs) -> CmdResult {
         let report = session
             .run_carve(&src, &cfg, &mut |ev| {
                 if json {
-                    println!("{}", ev.to_ndjson());
+                    print_json(&ev.to_ndjson());
                 } else if !quiet {
                     if let reclaim_session::Event::Progress { pct, rate, .. } = ev {
                         eprint!("\rcarve  {pct:5.1}%  {}/s        ", format_size(*rate));
@@ -168,7 +168,7 @@ pub fn run(args: &ScanArgs) -> CmdResult {
                     fs: p.fs.clone(),
                     confidence: p.confidence,
                 };
-                println!("{}", ev.to_ndjson());
+                print_json(&ev.to_ndjson());
             }
         } else if !quiet && !props.is_empty() {
             eprintln!(
@@ -250,9 +250,22 @@ fn run_mounted(root: &str, args: &ScanArgs) -> CmdResult {
     Ok(Exit::Success)
 }
 
+/// Write one NDJSON line to stdout. A closed pipe (`reclaim scan --json | head`)
+/// is a clean exit, not a panic.
+fn print_json(line: &str) {
+    use std::io::Write as _;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    if let Err(e) = writeln!(out, "{line}") {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            std::process::exit(0);
+        }
+    }
+}
+
 fn emit_quick(ev: &reclaim_session::Event, json: bool, quiet: bool) {
     if json {
-        println!("{}", ev.to_ndjson());
+        print_json(&ev.to_ndjson());
     } else if !quiet {
         if let reclaim_session::Event::Warning { msg } = ev {
             eprintln!("  {msg}");

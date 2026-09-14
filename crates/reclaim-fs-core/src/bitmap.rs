@@ -104,13 +104,25 @@ impl Bitmap {
     /// Count of allocated clusters (for diagnostics).
     #[must_use]
     pub fn allocated_count(&self) -> u64 {
-        let mut n = 0u64;
-        for i in 0..self.block_count {
-            if self.is_block_allocated(i) {
-                n += 1;
+        // Bounded by the bits actually present (a crafted `block_count` must
+        // not drive a multi-billion-iteration loop); popcount per byte.
+        let n = self
+            .block_count
+            .min((self.bits.len() as u64).saturating_mul(8));
+        let full = (n / 8) as usize;
+        let rem = (n % 8) as u32;
+        let mut count: u64 = self
+            .bits
+            .get(..full)
+            .map(|b| b.iter().map(|x| u64::from(x.count_ones())).sum())
+            .unwrap_or(0);
+        if rem > 0 {
+            if let Some(last) = self.bits.get(full) {
+                let mask = (1u16 << rem) as u8 - 1;
+                count += u64::from((last & mask).count_ones());
             }
         }
-        n
+        count
     }
 }
 

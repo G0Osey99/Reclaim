@@ -133,7 +133,8 @@ pub fn parse_key(b: &[u8], off: usize) -> Option<CatalogKey> {
     }
     let parent_id = be_u32(b, off + 2);
     let name_len = be_u16(b, off + 6) as usize;
-    if name_len > 255 {
+    // TN1150: keyLength == 6 + 2*nameLength exactly, nameLength <= 255.
+    if name_len > 255 || key_length as usize != 6 + 2 * name_len {
         return None;
     }
     let name_off = off + 8;

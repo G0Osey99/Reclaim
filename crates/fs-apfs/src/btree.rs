@@ -172,7 +172,9 @@ pub fn walk_leaves<F, V>(
             return;
         }
         *budget -= 1;
-        let nkeys = node.nkeys.min(1 << 20) as usize;
+        // Cap by the table space too: each ToC entry is 4 bytes (fixed) or 8.
+        let toc_cap = node.table_len / (if node.fixed { 4 } else { 8 });
+        let nkeys = (node.nkeys.min(1 << 20) as usize).min(toc_cap);
         if node.is_leaf() {
             for i in 0..nkeys {
                 if let Some((k, v)) = node.record(i, fixed_key, fixed_val) {

@@ -299,12 +299,7 @@ impl Session {
                 let meta = ent.metadata().ok();
                 let len = meta.as_ref().map(|m| m.len()).unwrap_or(0);
                 let name = ent.file_name().to_string_lossy().into_owned();
-                let ext = rel_str
-                    .rsplit('.')
-                    .next()
-                    .filter(|e| *e != rel_str && !e.is_empty())
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
+                let ext = ext_of(&rel_str);
                 let family = family_for_ext(&ext);
                 let format = if ext.is_empty() {
                     "file".to_string()
@@ -408,12 +403,7 @@ impl EntrySink for CollectSink {
             .map(|(o, _)| *o)
             .unwrap_or_else(|| pseudo_offset(entry.path.as_deref().unwrap_or(&entry.name)));
         let path = entry.path.clone().unwrap_or_else(|| entry.name.clone());
-        let ext = path
-            .rsplit('.')
-            .next()
-            .filter(|e| *e != path && !e.is_empty())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let ext = ext_of(&path);
         let family = family_for_ext(&ext);
         let format = if ext.is_empty() {
             "file".to_string()
@@ -450,6 +440,17 @@ fn pseudo_offset(s: &str) -> u64 {
 }
 
 /// Map an extension to a carve family so `results --family` works uniformly.
+/// Lower-cased extension of the final path component (`""` if none), so a
+/// dotted directory never leaks into the extension.
+fn ext_of(path: &str) -> String {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    name.rsplit_once('.')
+        .map(|(stem, e)| if stem.is_empty() { "" } else { e })
+        .filter(|e| !e.is_empty() && !e.contains('/'))
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
 fn family_for_ext(ext: &str) -> String {
     if ext.is_empty() {
         return "file".to_string();
@@ -469,4 +470,18 @@ fn family_for_ext(ext: &str) -> String {
         _ => "file",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ext_of;
+
+    #[test]
+    fn ext_from_final_component_only() {
+        assert_eq!(ext_of("a/b/c.TXT"), "txt");
+        assert_eq!(ext_of("dir.d/file"), "");
+        assert_eq!(ext_of("dir.d/.hidden"), "");
+        assert_eq!(ext_of("noext"), "");
+        assert_eq!(ext_of("x/y.tar.gz"), "gz");
+    }
 }

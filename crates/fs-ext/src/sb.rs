@@ -146,7 +146,11 @@ fn parse_at(src: &Arc<dyn BlockSource>, off: u64, found_group: u32) -> Option<Su
     let incompat = le_u32(&sb, 0x60);
     let has_64bit = incompat & INCOMPAT_64BIT != 0;
     let desc_size = if has_64bit {
-        u64::from(le_u16(&sb, 0xFE)).max(64)
+        let d = u64::from(le_u16(&sb, 0xFE));
+        if !(64..=1024).contains(&d) || !d.is_power_of_two() {
+            return None;
+        }
+        d
     } else {
         32
     };
@@ -196,7 +200,9 @@ fn read_group_descs(src: &Arc<dyn BlockSource>, sb: &Superblock) -> Vec<GroupDes
     }
     let gdt_block = sb.first_data_block + 1;
     let gdt_off = gdt_block.saturating_mul(sb.block_size);
-    let total = ngroups.saturating_mul(sb.desc_size);
+    let total = ngroups
+        .saturating_mul(sb.desc_size)
+        .min(src.len().saturating_sub(gdt_off));
     let bytes = crate::bytes::read(src, gdt_off, usize::try_from(total).unwrap_or(0));
     let mut out = Vec::with_capacity(ngroups as usize);
     for g in 0..ngroups {

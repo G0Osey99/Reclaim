@@ -73,8 +73,8 @@ public final class ResultsModel: ObservableObject {
     }
 
     /// A recover destination check for the current selection.
-    public func checkDestination(_ dest: String) -> DestinationCheck? {
-        try? session.checkDestination(dest: dest, neededBytes: selectedBytes)
+    public func checkDestination(_ dest: String) throws -> DestinationCheck {
+        try session.checkDestination(dest: dest, neededBytes: selectedBytes)
     }
 
     /// The currently focused record (for the inspector).

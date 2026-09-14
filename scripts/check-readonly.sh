@@ -32,7 +32,15 @@ libc::ftruncate
 libc::unlink
 libc::ioctl
 \bpwrite\b
-\bioctl\b'
+\bioctl\b
+write_all_at
+\.write_at\(
+\.set_len\(
+File::options
+PROT_WRITE
+libc::open\(
+libc::openat\(
+libc::truncate'
 
 # Build the allow-list into an extended-regex of path prefixes.
 allow_re=""

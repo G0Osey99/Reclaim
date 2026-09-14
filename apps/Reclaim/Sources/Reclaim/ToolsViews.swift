@@ -109,7 +109,10 @@ struct ImageToolView: View {
         }
         let dst = dest
         Task {
-            let spec = await sourceSpec(bsd)
+            // Keep the helper fd open until the job has finished with it.
+            let dev = await deviceFor(bsd)
+            defer { dev?.close() }
+            let spec = dev?.sourceSpec ?? bsd
             do {
                 let j = try startImage(source: spec, dest: dst, opts: Options.image(zstd: zstd), sink: sink)
                 job = j
@@ -127,11 +130,9 @@ struct ImageToolView: View {
         _ = path
     }
 
-    private func sourceSpec(_ bsd: String) async -> String {
-        if model.helper.status == .enabled, let dev = try? await model.helper.openDevice(bsd: bsd) {
-            return dev.sourceSpec
-        }
-        return bsd
+    private func deviceFor(_ bsd: String) async -> DeviceFD? {
+        guard model.helper.status == .enabled else { return nil }
+        return try? await model.helper.openDevice(bsd: bsd)
     }
 }
 
@@ -183,7 +184,9 @@ struct LostVolumesView: View {
         guard let bsd else { return }
         scanning = true; errorMessage = nil
         Task {
-            let spec = await specFor(bsd)
+            let dev = await deviceFor(bsd)
+            defer { dev?.close() }
+            let spec = dev?.sourceSpec ?? bsd
             do {
                 let list = try await Task.detached { try volumes(source: spec, sessionDir: nil) }.value
                 proposals = list; scanning = false
@@ -198,11 +201,9 @@ struct LostVolumesView: View {
         adopted = sc.session
     }
 
-    private func specFor(_ bsd: String) async -> String {
-        if model.helper.status == .enabled, let dev = try? await model.helper.openDevice(bsd: bsd) {
-            return dev.sourceSpec
-        }
-        return bsd
+    private func deviceFor(_ bsd: String) async -> DeviceFD? {
+        guard model.helper.status == .enabled else { return nil }
+        return try? await model.helper.openDevice(bsd: bsd)
     }
 }
 
@@ -252,7 +253,9 @@ struct SnapshotBrowserView: View {
         guard let bsd else { return }
         errorMessage = nil; diff = []
         Task {
-            let spec = await specFor(bsd)
+            let dev = await deviceFor(bsd)
+            defer { dev?.close() }
+            let spec = dev?.sourceSpec ?? bsd
             do { list = try await Task.detached { try snapshots(source: spec) }.value }
             catch { errorMessage = "\(error)" }
         }
@@ -260,15 +263,15 @@ struct SnapshotBrowserView: View {
     private func doDiff(_ xid: UInt64) {
         guard let bsd else { return }
         Task {
-            let spec = await specFor(bsd)
+            let dev = await deviceFor(bsd)
+            defer { dev?.close() }
+            let spec = dev?.sourceSpec ?? bsd
             do { diff = try await Task.detached { try snapshotDiff(source: spec, fromXid: xid) }.value }
             catch { errorMessage = "\(error)" }
         }
     }
-    private func specFor(_ bsd: String) async -> String {
-        if model.helper.status == .enabled, let dev = try? await model.helper.openDevice(bsd: bsd) {
-            return dev.sourceSpec
-        }
-        return bsd
+    private func deviceFor(_ bsd: String) async -> DeviceFD? {
+        guard model.helper.status == .enabled else { return nil }
+        return try? await model.helper.openDevice(bsd: bsd)
     }
 }

@@ -24,6 +24,7 @@ use reclaim_fs_core::{
     Entry, EntryKind, EntrySink, EntryState, Extent, FileSystem, FsError, Probe, WalkOpts,
     WalkStats,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 
 const SECTOR: u64 = 2048;
@@ -32,6 +33,8 @@ const CD001: &[u8; 5] = b"CD001";
 /// Cap on directory records + recursion (DoS guard on crafted images).
 const MAX_ENTRIES: usize = 5_000_000;
 const MAX_DEPTH: u32 = 64;
+/// Cap on a single directory extent read (the data length is a raw u32).
+const MAX_DIR_BYTES: u64 = 16 * 1024 * 1024;
 
 /// An opened ISO 9660 / Joliet volume.
 pub struct Iso {
@@ -189,12 +192,14 @@ impl FileSystem for Iso {
             return Ok(stats);
         }
         let mut next_id = 1u64;
+        let mut visited = HashSet::new();
         self.walk_dir(
             self.root_lba,
             self.root_len,
             "",
             0,
             &mut next_id,
+            &mut visited,
             sink,
             &mut stats,
             opts,
@@ -218,6 +223,7 @@ impl Iso {
         path: &str,
         depth: u32,
         next_id: &mut u64,
+        visited: &mut HashSet<u64>,
         sink: &mut dyn EntrySink,
         stats: &mut WalkStats,
         opts: &WalkOpts,
@@ -225,6 +231,10 @@ impl Iso {
         if depth > MAX_DEPTH || (stats.emitted as usize) >= opts.max_entries.min(MAX_ENTRIES) {
             return;
         }
+        if !visited.insert(lba) {
+            return;
+        }
+        let len = len.min(MAX_DIR_BYTES);
         let data = read(&self.src, lba.saturating_mul(self.block_size), len as usize);
         let mut pos = 0usize;
         let mut guard = 0usize;
@@ -300,7 +310,7 @@ impl Iso {
             }
         }
         for (l, ln, p) in subdirs {
-            self.walk_dir(l, ln, &p, depth + 1, next_id, sink, stats, opts);
+            self.walk_dir(l, ln, &p, depth + 1, next_id, visited, sink, stats, opts);
         }
     }
 

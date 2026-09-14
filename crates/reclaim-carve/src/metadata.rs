@@ -38,7 +38,10 @@ impl Metadata {
     /// `{family}/{yyyy-mm-dd}/{model|subtype}/{name|f{offset:016x}}.{ext}`.
     #[must_use]
     pub fn suggested_path(&self, family: &str, subtype: &str, offset: u64, ext: &str) -> String {
-        let date = self.date.as_deref().unwrap_or("undated");
+        let date = self
+            .date
+            .as_deref()
+            .map_or_else(|| "undated".to_string(), sanitize);
         let bucket = self
             .model
             .as_deref()
@@ -64,12 +67,14 @@ fn sanitize(s: &str) -> String {
         })
         .collect();
     let trimmed = out.trim().to_string();
-    out = if trimmed.is_empty() {
+    out = if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
         "unnamed".to_string()
     } else {
         trimmed
     };
-    out.truncate(120);
+    if let Some((idx, _)) = out.char_indices().nth(120) {
+        out.truncate(idx);
+    }
     out
 }
 
@@ -100,5 +105,30 @@ mod tests {
     fn sanitize_strips_separators() {
         assert_eq!(sanitize("a/b:c"), "a_b_c");
         assert_eq!(sanitize("   "), "unnamed");
+        assert_eq!(sanitize(".."), "unnamed");
+        assert_eq!(sanitize("."), "unnamed");
+    }
+
+    #[test]
+    fn sanitize_caps_on_char_boundary() {
+        let long: String = std::iter::repeat_n('\u{e9}', 100).collect();
+        assert_eq!(long.len(), 200);
+        let out = sanitize(&long);
+        assert!(out.chars().count() <= 120);
+        assert_eq!(out.chars().count(), 100);
+        let longer: String = std::iter::repeat_n('\u{e9}', 130).collect();
+        assert_eq!(sanitize(&longer).chars().count(), 120);
+    }
+
+    #[test]
+    fn synth_sanitizes_date() {
+        let m = Metadata {
+            date: Some("../x".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            m.suggested_path("image", "jpeg", 0, "jpg"),
+            "image/.._x/jpeg/f0000000000000000.jpg"
+        );
     }
 }

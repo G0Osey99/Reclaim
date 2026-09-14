@@ -123,7 +123,8 @@ public final class HelperClient: ObservableObject {
         c.remoteObjectInterface = NSXPCInterface(with: ReclaimHelperXPC.self)
         if let team = reclaimConfiguredTeamID() {
             if #available(macOS 13.0, *) {
-                setRequirement(c, reclaimCodeRequirement(teamID: team))
+                setRequirement(
+                    c, reclaimCodeRequirement(teamID: team, identifier: reclaimHelperCodeIdentifier))
             }
         }
         c.resume()
@@ -138,7 +139,8 @@ public final class HelperClient: ObservableObject {
     public func ping() async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             let c = connection()
-            guard let p = proxy(c, { cont.resume(throwing: $0) }) else {
+            guard let p = proxy(c, { c.invalidate(); cont.resume(throwing: $0) }) else {
+                c.invalidate()
                 cont.resume(throwing: HelperError.noProxy)
                 return
             }
@@ -155,7 +157,8 @@ public final class HelperClient: ObservableObject {
     public func openDevice(bsd: String) async throws -> DeviceFD {
         try await withCheckedThrowingContinuation { cont in
             let c = connection()
-            guard let p = proxy(c, { cont.resume(throwing: $0) }) else {
+            guard let p = proxy(c, { c.invalidate(); cont.resume(throwing: $0) }) else {
+                c.invalidate()
                 cont.resume(throwing: HelperError.noProxy)
                 return
             }
@@ -177,7 +180,9 @@ public final class HelperClient: ObservableObject {
         do {
             let dev = try await openDevice(bsd: bootWholeDisk)
             defer { dev.close() }
-            let data = try dev.handle.read(upToCount: 512)
+            // A raw device read can stall; keep it off the main thread.
+            let handle = dev.handle
+            let data = try await Task.detached { try handle.read(upToCount: 4096) }.value
             fullDiskAccess = (data?.isEmpty == false)
         } catch {
             fullDiskAccess = false
@@ -210,16 +215,26 @@ import AppKit
 #endif
 
 /// A helper-provided device fd bundled with the XPC connection that owns it.
+/// Keep it alive for as long as the core may re-parse its `sourceSpec` (a scan
+/// session re-resolves `fd:N` for preview/recover); `close()` is idempotent and
+/// also runs on deinit.
 public final class DeviceFD {
     public let handle: FileHandle
     private let connection: NSXPCConnection
     public let bsd: String
+    private var closed = false
     init(handle: FileHandle, connection: NSXPCConnection, bsd: String) {
         self.handle = handle
         self.connection = connection
         self.bsd = bsd
     }
+    deinit { close() }
     /// The `fd:<n>:<bsd>` source spec the core resolves (via `RawDevice::from_fd`).
     public var sourceSpec: String { "fd:\(handle.fileDescriptor):\(bsd)" }
-    public func close() { connection.invalidate() }
+    public func close() {
+        guard !closed else { return }
+        closed = true
+        try? handle.close()
+        connection.invalidate()
+    }
 }

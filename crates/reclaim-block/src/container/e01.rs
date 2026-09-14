@@ -145,6 +145,7 @@ struct Parsed {
 fn parse_segment(backing: &Arc<dyn BlockSource>) -> Result<Parsed, BlockError> {
     let mut geometry = None;
     let mut tables = Vec::new();
+    let mut total_entries: u64 = 0;
     let mut off = 13u64; // after the 13-byte file header
     let flen = backing.len();
     let mut guard = 0u32;
@@ -171,6 +172,12 @@ fn parse_segment(backing: &Arc<dyn BlockSource>) -> Result<Parsed, BlockError> {
             }
             b"table" => {
                 if let Some(t) = parse_table(backing, data_off, size) {
+                    // Cap the cumulative entry count while walking so a chain of
+                    // huge tables cannot accumulate before the caller's check.
+                    total_entries = total_entries.saturating_add(t.entries.len() as u64);
+                    if total_entries > MAX_CHUNKS {
+                        return Err(BlockError::Container("ewf: too many chunks".into()));
+                    }
                     tables.push(t);
                 }
             }

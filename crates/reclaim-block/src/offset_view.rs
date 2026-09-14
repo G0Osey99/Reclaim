@@ -2,6 +2,7 @@
 //! a partition/volume as its own source (docs/plan/03 §2.1).
 
 use crate::error::BlockError;
+use crate::image_file::mark_bad_from_byte;
 use crate::source::{align_down, BlockSource, ReadResult, SourceId};
 use std::sync::Arc;
 
@@ -85,10 +86,26 @@ impl BlockSource for OffsetView {
             }
             return res;
         }
-        // Clamp reads that run past the window end by delegating only the bytes
-        // inside it; the parent marks any beyond-window tail as bad.
+        // Clamp reads that run past the window end: delegate only the bytes
+        // inside it, zero-fill the tail and mark its sectors bad — the parent
+        // would otherwise hand back a neighbouring partition's bytes as Good.
         let parent_off = align_down(self.start, ss) + offset;
-        self.inner.read_at(parent_off, buf)
+        let avail = usize::try_from(self.len - offset).map_or(buf.len(), |a| a.min(buf.len()));
+        if avail == buf.len() {
+            return self.inner.read_at(parent_off, buf);
+        }
+        let (head, tail) = buf.split_at_mut(avail);
+        let inner = self.inner.read_at(parent_off, head);
+        let mut res = ReadResult::good(self.sector_size(), sector_count);
+        for i in inner.bad_sectors() {
+            res.mark_bad(i);
+        }
+        for i in inner.unread_sectors() {
+            res.mark_unread(i);
+        }
+        tail.fill(0);
+        mark_bad_from_byte(&mut res, self.sector_size(), buf.len(), avail);
+        res
     }
 
     fn id(&self) -> SourceId {
@@ -130,5 +147,23 @@ mod tests {
         let img: Arc<dyn BlockSource> = Arc::new(ImageFile::open(tmp.path()).unwrap());
         assert!(OffsetView::new(img.clone(), 100, 128).is_err()); // unaligned start
         assert!(OffsetView::new(img, 2048, 4096).is_err()); // runs past parent
+    }
+
+    #[test]
+    fn read_crossing_window_end_is_clamped() {
+        let data: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
+        let tmp = temp(&data);
+        let img: Arc<dyn BlockSource> = Arc::new(ImageFile::open(tmp.path()).unwrap());
+        // Window [1024, 3072): the parent has more bytes after it.
+        let view = OffsetView::new(img, 1024, 2048).unwrap();
+        let mut buf = vec![0xEEu8; 1024];
+        let r = view.read_at(1536, &mut buf); // last 512 in-window + 512 past it
+        assert_eq!(r.status(0), crate::source::SectorStatus::Good);
+        assert_eq!(r.status(1), crate::source::SectorStatus::Bad);
+        assert_eq!(&buf[..512], &data[2560..3072]);
+        assert!(
+            buf[512..].iter().all(|b| *b == 0),
+            "tail must be zeroed, not the neighbour's bytes"
+        );
     }
 }

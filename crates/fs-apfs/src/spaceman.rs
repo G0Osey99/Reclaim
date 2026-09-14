@@ -31,15 +31,23 @@ pub fn build(
     block_count: u64,
 ) -> Option<Bitmap> {
     let bs = u64::from(block_size.max(1));
-    let sm = read(src, base + sm_paddr.checked_mul(bs)?, block_size as usize);
+    let sm = read(
+        src,
+        base.checked_add(sm_paddr.checked_mul(bs)?)?,
+        block_size as usize,
+    );
     let obj = ObjPhys::parse(&sm)?;
     if obj.kind() != OBJ_SPACEMAN {
         return None;
     }
+    // Spec: one bitmap block covers block_size*8 blocks, so blocks_per_chunk
+    // must equal exactly that (a crafted value would inflate the bitmap).
     let blocks_per_chunk = le_u32(&sm, 36);
-    if blocks_per_chunk == 0 {
+    if blocks_per_chunk == 0 || u64::from(blocks_per_chunk) != bs.saturating_mul(8) {
         return None;
     }
+    // Never assemble more than the bitmap for `block_count` blocks (≤ 64 MiB).
+    let max_bytes = block_count.div_ceil(8).min(64 << 20) as usize;
     // spaceman_device SD_MAIN begins at +48.
     const DEV: usize = 48;
     let cib_count = le_u32(&sm, DEV + 16);
@@ -55,22 +63,28 @@ pub fn build(
 
     // The CIB address array lives inside the spaceman block at `addr_off`.
     for c in 0..cib_count.min(4096) {
+        if bits.len() >= max_bytes {
+            break;
+        }
         let cib_paddr = le_u64(&sm, addr_off + (c as usize) * 8);
         if cib_paddr == 0 {
             continue;
         }
         let cib = read(
             src,
-            base + cib_paddr.saturating_mul(bs),
+            base.saturating_add(cib_paddr.saturating_mul(bs)),
             block_size as usize,
         );
         if ObjPhys::parse(&cib).is_none() {
             continue;
         }
         // chunk_info_block: obj(32), cib_index u32(32), cib_chunk_info_count u32(36),
-        // then chunk_info[] each 32 bytes.
-        let n = le_u32(&cib, 36).min(blocks_per_chunk); // sanity cap
-        for k in 0..n as usize {
+        // then chunk_info[] each 32 bytes — at most (block_size - 40) / 32 fit.
+        let n = (le_u32(&cib, 36) as usize).min((block_size as usize).saturating_sub(40) / 32);
+        for k in 0..n {
+            if bits.len() >= max_bytes {
+                break;
+            }
             let e = 40 + k * 32;
             // chunk_info: ci_xid u64, ci_addr u64, ci_block_count u32, ci_free_count u32, ci_bitmap_addr u64
             let block_cnt = le_u32(&cib, e + 16);
@@ -81,7 +95,7 @@ pub fn build(
             } else {
                 let bm = read(
                     src,
-                    base + bitmap_addr.saturating_mul(bs),
+                    base.saturating_add(bitmap_addr.saturating_mul(bs)),
                     block_size as usize,
                 );
                 let take = bytes_per_chunk_bitmap.min(bm.len());

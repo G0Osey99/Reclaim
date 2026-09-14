@@ -207,7 +207,8 @@ impl Volume {
     /// Whether this is the sealed System volume (skipped by default).
     fn is_system(&self) -> bool {
         const APFS_VOL_ROLE_SYSTEM: u16 = 0x0001;
-        const INCOMPAT_SEALED: u64 = 0x0000_0200;
+        // apfs.h: APFS_INCOMPAT_SEALED = 0x00000020 (0x200 is a different flag).
+        const INCOMPAT_SEALED: u64 = 0x0000_0020;
         self.role == APFS_VOL_ROLE_SYSTEM || self.incompat & INCOMPAT_SEALED != 0
     }
 }
@@ -223,7 +224,13 @@ pub fn probe(src: &Arc<dyn BlockSource>) -> Option<Probe> {
     // Try the default 4096 block; NXSB records its own size so read enough.
     let head = read(src, 0, 4096);
     let nx = Nxsb::parse(&head)?;
-    let checksum_ok = fletcher64_valid(head.get(..nx.block_size as usize).unwrap_or(&head));
+    // NXSB records its own block size; checksum the *full* block.
+    let full = if nx.block_size as usize > head.len() {
+        read(src, 0, nx.block_size as usize)
+    } else {
+        head
+    };
+    let checksum_ok = fletcher64_valid(full.get(..nx.block_size as usize).unwrap_or(&full));
     Some(Probe {
         fs_kind: "apfs",
         confidence: if checksum_ok { 0.99 } else { 0.9 },
@@ -265,6 +272,9 @@ pub fn open(src: Arc<dyn BlockSource>, _probe: Probe) -> Result<Apfs, FsError> {
     let block0 =
         Nxsb::parse(&head).ok_or_else(|| FsError::NotThisFs("no NXSB at block 0".into()))?;
     let bs = block0.block_size;
+    // Re-read the full block-0 superblock at its declared size and verify its
+    // checksum so a stale/torn block 0 is only a history candidate when intact.
+    let block0_ok = fletcher64_valid(&read(&src, 0, bs as usize));
 
     // Enumerate the checkpoint descriptor ring for historical superblocks.
     let mut history: Vec<Nxsb> = Vec::new();
@@ -274,7 +284,9 @@ pub fn open(src: Arc<dyn BlockSource>, _probe: Probe) -> Result<Apfs, FsError> {
             hist.push(nx);
         }
     };
-    push(block0.clone(), &mut history, &mut seen_xids);
+    if block0_ok {
+        push(block0.clone(), &mut history, &mut seen_xids);
+    }
 
     let ring = block0.xp_desc_blocks.min(MAX_DESC_RING);
     for i in 0..ring {
@@ -404,6 +416,13 @@ impl Apfs {
         )
     }
 
+    /// [`read_block`](Self::read_block), returning `None` unless the block's
+    /// Fletcher-64 checksum verifies (a torn or reused block is not an object).
+    fn read_verified_block(&self, paddr: u64) -> Option<Vec<u8>> {
+        let blk = self.read_block(paddr);
+        fletcher64_valid(&blk).then_some(blk)
+    }
+
     /// A bitmap marking the blocks referenced by the **current live files'**
     /// data extents. This is the right "overwritten?" signal for recovery
     /// scoring: a deleted file whose blocks a live file now occupies is truly
@@ -462,8 +481,10 @@ impl Apfs {
     }
 
     /// Resolve the space-manager checkpoint mapping to find the spaceman paddr,
-    /// then build the container allocation bitmap.
-    fn spaceman_bitmap(&self) -> Option<Bitmap> {
+    /// then build the container allocation bitmap (diagnostic; the walk steers
+    /// by the live-extent map instead — see [`Apfs::live_extent_bitmap`]).
+    #[must_use]
+    pub fn spaceman_bitmap(&self) -> Option<Bitmap> {
         let sm_paddr = self.resolve_ephemeral(self.newest.spaceman_oid)?;
         spaceman::build(
             &self.src,
@@ -540,7 +561,7 @@ impl Apfs {
             Some(n) => n,
             None => return HashMap::new(),
         };
-        let fetch = |paddr: u64| -> Option<Vec<u8>> { Some(self.read_block(paddr)) };
+        let fetch = |paddr: u64| -> Option<Vec<u8>> { self.read_verified_block(paddr) };
         self.budgeted_walk(root, &fetch, OMAP_KEY, OMAP_VAL, &mut |k, v| {
             let oid = le_u64(k, 0);
             let xid = le_u64(k, 8);
@@ -582,7 +603,14 @@ impl Apfs {
         };
         let fetch = |oid: u64| -> Option<Vec<u8>> {
             let p = vidx.get(&oid)?;
-            Some(self.read_block(*p))
+            let blk = self.read_verified_block(*p)?;
+            // The block must still be *this* object at or before `at_xid`;
+            // otherwise it was reused since the omap entry was written.
+            let obj = ObjPhys::parse(&blk)?;
+            if obj.oid != oid || obj.xid > at_xid {
+                return None;
+            }
+            Some(blk)
         };
         let hashed = vol.hashed_drec();
         self.budgeted_walk(root, &fetch, 0, 0, &mut |k, v| {
@@ -657,6 +685,15 @@ impl VolumeContents {
         self.drecs
             .iter()
             .map(|d| (d.parent_id, d.name.clone()))
+            .collect()
+    }
+
+    /// Every object id referenced by this view's inodes or directory records.
+    fn live_ids(&self) -> HashSet<u64> {
+        self.inodes
+            .keys()
+            .copied()
+            .chain(self.drecs.iter().map(|d| d.file_id))
             .collect()
     }
 }
@@ -747,6 +784,7 @@ impl Apfs {
         &self,
         hashed: bool,
         present: &HashSet<(u64, String)>,
+        live_ids: &HashSet<u64>,
         bitmap: Option<&Bitmap>,
         sink: &mut dyn EntrySink,
         stats: &mut WalkStats,
@@ -815,7 +853,7 @@ impl Apfs {
                 continue;
             }
             let key = (d.parent_id, d.name.clone());
-            if present.contains(&key) || emitted.contains(&key) {
+            if present.contains(&key) || emitted.contains(&key) || live_ids.contains(&d.file_id) {
                 continue;
             }
             if let Some(entry) = self.build_entry(d, &vc, &edges, EntryState::Orphaned, 0.6) {
@@ -848,12 +886,9 @@ impl FileSystem for Apfs {
     fn walk(&self, sink: &mut dyn EntrySink, opts: &WalkOpts) -> Result<WalkStats, FsError> {
         self.work.set(TOTAL_WORK_BUDGET);
         let mut stats = WalkStats::default();
-        // The space-manager bitmap is parsed for diagnostics (docs/plan/04 §3.1),
-        // but the orphan sweep is steered by the live-referenced map so it still
-        // examines freed metadata blocks that APFS has re-allocated.
-        let _spaceman_free = self
-            .spaceman_bitmap()
-            .map(|b| b.block_count() - b.allocated_count());
+        // The orphan sweep is steered by the live-referenced map (not the
+        // space-manager bitmap) so it still examines freed metadata blocks that
+        // APFS has re-allocated; see [`Apfs::spaceman_bitmap`] for diagnostics.
         let targets = self.target_volumes(opts.include_system_volume);
 
         for (fs_oid, vol) in &targets {
@@ -861,6 +896,10 @@ impl FileSystem for Apfs {
             let cur = self.walk_fs_tree(vol, self.newest.xid);
             let cur_edges = cur.edges();
             let present = cur.present_names();
+            // Object ids that are live *now*: a stale (parent, name) drec for a
+            // renamed/moved file carries the same file_id and must not be
+            // presented as deleted (APFS never reuses object ids).
+            let live_ids = cur.live_ids();
             let live_bm = self.live_bitmap_from(&cur);
             let mut emitted: HashSet<(u64, String)> = HashSet::new();
 
@@ -891,7 +930,10 @@ impl FileSystem for Apfs {
                         let old_edges = old.edges();
                         for d in &old.drecs {
                             let key = (d.parent_id, d.name.clone());
-                            if present.contains(&key) || emitted.contains(&key) {
+                            if present.contains(&key)
+                                || emitted.contains(&key)
+                                || live_ids.contains(&d.file_id)
+                            {
                                 continue;
                             }
                             if let Some(mut entry) =
@@ -916,7 +958,10 @@ impl FileSystem for Apfs {
                         let snap_edges = snapv.edges();
                         for d in &snapv.drecs {
                             let key = (d.parent_id, d.name.clone());
-                            if present.contains(&key) || emitted.contains(&key) {
+                            if present.contains(&key)
+                                || emitted.contains(&key)
+                                || live_ids.contains(&d.file_id)
+                            {
                                 continue;
                             }
                             if let Some(entry) = self.build_entry(
@@ -940,6 +985,7 @@ impl FileSystem for Apfs {
                 self.orphan_scan(
                     vol.hashed_drec(),
                     &present,
+                    &live_ids,
                     live_bm.as_ref(),
                     sink,
                     &mut stats,
@@ -991,7 +1037,7 @@ impl Apfs {
             Some(n) => n,
             None => return out,
         };
-        let fetch = |paddr: u64| -> Option<Vec<u8>> { Some(self.read_block(paddr)) };
+        let fetch = |paddr: u64| -> Option<Vec<u8>> { self.read_verified_block(paddr) };
         self.budgeted_walk(root, &fetch, 0, 0, &mut |k, v| {
             if k.len() < 8 {
                 return;
@@ -1114,9 +1160,12 @@ mod tests {
         let view = container_view(&disk);
         let probe = probe(&view).unwrap();
         let fs = open(view, probe).unwrap();
-        let bm = fs.allocation_bitmap().expect("spaceman bitmap");
+        let bm = fs.allocation_bitmap().expect("live-extent bitmap");
         assert!(bm.allocated_count() > 0);
         assert!(bm.block_count() > 0);
+        let sm = fs.spaceman_bitmap().expect("spaceman bitmap");
+        assert!(sm.allocated_count() > 0);
+        assert_eq!(sm.block_count(), bm.block_count());
     }
 
     #[test]

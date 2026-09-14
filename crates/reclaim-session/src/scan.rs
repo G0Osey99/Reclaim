@@ -132,7 +132,9 @@ impl Session {
         let mut opts = cfg.carve.clone();
         opts.block_size = block_size;
 
-        install_sigint();
+        if cfg.cancel.is_none() {
+            install_sigint();
+        }
         let cancel_ref: &AtomicBool = cfg.cancel.as_deref().unwrap_or(&INTERRUPT);
         let start = Instant::now();
 
@@ -179,98 +181,110 @@ impl Session {
             let mut last_rate_scanned = 0u64;
             let ckpt = Duration::from_secs(cfg.checkpoint_secs.max(1));
 
-            loop {
-                // Device-disappeared (hot-unplug): stop the carve thread so we
-                // checkpoint and exit resumably instead of reading zeros to EOF
-                // (docs/plan/07 §4).
-                if src.vanished() {
-                    cancel_ref.store(true, std::sync::atomic::Ordering::SeqCst);
+            // The writer runs as a closure so an error can be handled without
+            // leaving the carve thread blocked on a full channel (deadlock):
+            // on Err we set cancel, drop `rx`, join, then propagate.
+            let mut writer = || -> Result<(), SessionError> {
+                loop {
+                    // Device-disappeared (hot-unplug): stop the carve thread so we
+                    // checkpoint and exit resumably instead of reading zeros to EOF
+                    // (docs/plan/07 §4).
+                    if src.vanished() {
+                        cancel_ref.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    match rx.recv_timeout(Duration::from_millis(400)) {
+                        Ok(Msg::Found(cf)) => {
+                            let cf = *cf;
+                            let subtype = cf.format.rsplit('.').next().unwrap_or(&cf.format);
+                            let ev = Event::Found {
+                                id: crate::id::result_id(
+                                    &self.source.source_id,
+                                    ENGINE,
+                                    cf.offset,
+                                    cf.len,
+                                ),
+                                engine: ENGINE.to_string(),
+                                path: cf
+                                    .meta
+                                    .suggested_path(&cf.family, subtype, cf.offset, &cf.ext),
+                                size: cf.len,
+                                score: cf.score,
+                            };
+                            write_event(&mut log, &ev, cfg.emit_events, on_event);
+                            pending.push(cf);
+                            if pending.len() >= BATCH {
+                                flush(self, &mut pending)?;
+                            }
+                        }
+                        Ok(Msg::Progress(p)) => {
+                            cur.cursor = p.cursor;
+                            cur.scanned = p.scanned;
+                            cur.total = p.total;
+                            cur.found = p.found;
+                            let dt = last_rate_t.elapsed().as_secs_f64();
+                            let rate = if dt > 0.0 {
+                                ((p.scanned - last_rate_scanned) as f64 / dt) as u64
+                            } else {
+                                0
+                            };
+                            last_rate_t = Instant::now();
+                            last_rate_scanned = p.scanned;
+                            let pct = if cur.total > 0 {
+                                cur.scanned as f64 / cur.total as f64 * 100.0
+                            } else {
+                                0.0
+                            };
+                            let ev = Event::Progress {
+                                pass: ENGINE.to_string(),
+                                lba: p.cursor,
+                                pct,
+                                rate,
+                            };
+                            write_event(&mut log, &ev, cfg.emit_events, on_event);
+                            if last_ckpt.elapsed() >= ckpt
+                                || cur.scanned.saturating_sub(last_ckpt_scanned) >= ONE_GIB
+                            {
+                                flush(self, &mut pending)?;
+                                self.store.put_progress(
+                                    ENGINE,
+                                    cur.cursor,
+                                    cur.scanned,
+                                    cur.total,
+                                    cur.found,
+                                    false,
+                                    block_size,
+                                )?;
+                                let _ = self.store.put_event("progress", &ev.to_ndjson());
+                                last_ckpt = Instant::now();
+                                last_ckpt_scanned = cur.scanned;
+                            }
+                        }
+                        Err(RecvTimeoutError::Timeout) => {
+                            if last_ckpt.elapsed() >= ckpt {
+                                flush(self, &mut pending)?;
+                                self.store.put_progress(
+                                    ENGINE,
+                                    cur.cursor,
+                                    cur.scanned,
+                                    cur.total,
+                                    cur.found,
+                                    false,
+                                    block_size,
+                                )?;
+                                last_ckpt = Instant::now();
+                                last_ckpt_scanned = cur.scanned;
+                            }
+                        }
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
                 }
-                match rx.recv_timeout(Duration::from_millis(400)) {
-                    Ok(Msg::Found(cf)) => {
-                        let cf = *cf;
-                        let subtype = cf.format.rsplit('.').next().unwrap_or(&cf.format);
-                        let ev = Event::Found {
-                            id: crate::id::result_id(
-                                &self.source.source_id,
-                                ENGINE,
-                                cf.offset,
-                                cf.len,
-                            ),
-                            engine: ENGINE.to_string(),
-                            path: cf
-                                .meta
-                                .suggested_path(&cf.family, subtype, cf.offset, &cf.ext),
-                            size: cf.len,
-                            score: cf.score,
-                        };
-                        write_event(&mut log, &ev, cfg.emit_events, on_event);
-                        pending.push(cf);
-                        if pending.len() >= BATCH {
-                            flush(self, &mut pending)?;
-                        }
-                    }
-                    Ok(Msg::Progress(p)) => {
-                        cur.cursor = p.cursor;
-                        cur.scanned = p.scanned;
-                        cur.total = p.total;
-                        cur.found = p.found;
-                        let dt = last_rate_t.elapsed().as_secs_f64();
-                        let rate = if dt > 0.0 {
-                            ((p.scanned - last_rate_scanned) as f64 / dt) as u64
-                        } else {
-                            0
-                        };
-                        last_rate_t = Instant::now();
-                        last_rate_scanned = p.scanned;
-                        let pct = if cur.total > 0 {
-                            cur.scanned as f64 / cur.total as f64 * 100.0
-                        } else {
-                            0.0
-                        };
-                        let ev = Event::Progress {
-                            pass: ENGINE.to_string(),
-                            lba: p.cursor,
-                            pct,
-                            rate,
-                        };
-                        write_event(&mut log, &ev, cfg.emit_events, on_event);
-                        if last_ckpt.elapsed() >= ckpt
-                            || cur.scanned.saturating_sub(last_ckpt_scanned) >= ONE_GIB
-                        {
-                            flush(self, &mut pending)?;
-                            self.store.put_progress(
-                                ENGINE,
-                                cur.cursor,
-                                cur.scanned,
-                                cur.total,
-                                cur.found,
-                                false,
-                                block_size,
-                            )?;
-                            let _ = self.store.put_event("progress", &ev.to_ndjson());
-                            last_ckpt = Instant::now();
-                            last_ckpt_scanned = cur.scanned;
-                        }
-                    }
-                    Err(RecvTimeoutError::Timeout) => {
-                        if last_ckpt.elapsed() >= ckpt {
-                            flush(self, &mut pending)?;
-                            self.store.put_progress(
-                                ENGINE,
-                                cur.cursor,
-                                cur.scanned,
-                                cur.total,
-                                cur.found,
-                                false,
-                                block_size,
-                            )?;
-                            last_ckpt = Instant::now();
-                            last_ckpt_scanned = cur.scanned;
-                        }
-                    }
-                    Err(RecvTimeoutError::Disconnected) => break,
-                }
+                Ok(())
+            };
+            if let Err(e) = writer() {
+                cancel_ref.store(true, std::sync::atomic::Ordering::SeqCst);
+                drop(rx);
+                let _ = handle.join();
+                return Err(e);
             }
 
             let outcome = handle

@@ -6,6 +6,7 @@ use crate::exit::CmdError;
 use crate::source::Resolved;
 use reclaim_block::BlockSource;
 use reclaim_session::SourceInfo;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -92,15 +93,40 @@ pub fn dest_on_same_disk(source: &Resolved, dest: &Path) -> bool {
             (Some(a), Some(b)) => a == b,
             _ => false,
         },
-        Resolved::Device { bsd, .. } => match (Some(whole_disk(bsd)), dest_whole_disk(dest)) {
-            (Some(a), Some(b)) => a == b,
-            _ => false,
-        },
+        // Unknown destination disk or a non-`diskN` source label: refuse
+        // rather than guess.
+        Resolved::Device { bsd, .. } => {
+            if !bsd.starts_with("disk") {
+                return true;
+            }
+            let Some(dest_whole) = dest_whole_disk(dest) else {
+                return true;
+            };
+            !physical_set(&whole_disk(bsd)).is_disjoint(&physical_set(&dest_whole))
+        }
         // An adopted volume sits on its original source — check that.
         Resolved::Volume { .. } => source
             .underlying()
             .is_some_and(|inner| dest_on_same_disk(&inner, dest)),
     }
+}
+
+/// `whole` plus, when it is a synthesized APFS container, the whole disk of
+/// each of its physical stores — so `disk3` (container on `disk0s2`) and
+/// `disk0` compare as the same physical medium.
+fn physical_set(whole: &str) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    set.insert(whole.to_string());
+    if let Ok(disks) = reclaim_platform_macos::enumerate() {
+        if let Some(d) = disks.iter().find(|d| d.bsd_name == whole) {
+            if let Some(apfs) = &d.apfs {
+                for store in &apfs.physical_stores {
+                    set.insert(whole_disk(store));
+                }
+            }
+        }
+    }
+    set
 }
 
 /// st_dev of a file/dir.

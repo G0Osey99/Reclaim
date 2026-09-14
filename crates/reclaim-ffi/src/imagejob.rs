@@ -33,8 +33,13 @@ pub fn start_image(
     opts: ImageOptions,
     sink: Box<dyn EventSink>,
 ) -> Result<Arc<ImageJob>, RcError> {
-    let (_r, src, _info) = resolve::open_source(&source)?;
+    let (resolved, src, _info) = resolve::open_source(&source)?;
     let out = PathBuf::from(&dest);
+    if resolve::dest_on_same_disk(&resolved, &out) {
+        return Err(RcError::refused(format!(
+            "image destination {dest} is on the same disk as the source — refusing (data-loss risk)"
+        )));
+    }
     let map_path = default_map_path(&out);
     let hash_algo = HashAlgo::parse(&opts.hash)
         .ok_or_else(|| RcError::usage(format!("bad hash '{}'", opts.hash)))?;
